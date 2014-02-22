@@ -270,7 +270,16 @@ class Polynomial(object):
                                             for i,exponent in enumerate(term.monomial))
                 result._add_term(Term(derivative_coef, derivative_monomial))
         return result
-                                  
+
+    def squeeze(self):
+        '''Return a new polynomial with a (possibly) smaller number of
+        variables formed by eliminating variables that do not appear
+        in any term.'''
+        mask = [ any(term.monomial[i]>0 for term in self.terms)
+                 for i in range(self._num_vars) ]
+        result = Polynomial.zero(sum(mask))
+        for term in self.terms:
+            result.add_term(Term(term.coef, tuple(v for i,v in enumerate(term.monomial) if mask[i])))
 
     def _pop_leading_term(self, ordering):
         return self._term_dict.pop(self.leading_term(ordering).monomial)

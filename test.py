@@ -38,9 +38,13 @@ class PolynomialTest(unittest.TestCase):
         f, J_f_wrt_x, J_f_wrt_y = parse('2*x + 3*x*y**2 + 8*y**6 + 6',
                                         '2   + 3*y**2',
                                         '      6*x*y    + 48*y**5')
-
         self.assertEqual(f.partial_derivative(0), J_f_wrt_x)
         self.assertEqual(f.partial_derivative(1), J_f_wrt_y)
+
+    def test_squeeze(self):
+        f = parse('2*x + 3*x**2 - 1', variable_order=('w','x','y'))
+        g = parse('2*x + 3*x**2 - 1')
+        assert f.squeeze() == g
 
 
 
