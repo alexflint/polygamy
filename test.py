@@ -36,8 +36,8 @@ class PolynomialTest(unittest.TestCase):
 
     def test_derivative(self):
         f, J_f_wrt_x, J_f_wrt_y = parse('2*x + 3*x*y**2 + 8*y**6 + 6',
-                                        '2   + 3*y**2   + 8*y**6',
-                                        '2*x + 6*x*y    + 48*y**5')
+                                        '2   + 3*y**2',
+                                        '      6*x*y    + 48*y**5')
 
         self.assertEqual(f.partial_derivative(0), J_f_wrt_x)
         self.assertEqual(f.partial_derivative(1), J_f_wrt_y)

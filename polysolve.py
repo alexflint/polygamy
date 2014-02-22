@@ -100,6 +100,11 @@ class Term(object):
         else:
             raise ValueError('Invalid coefficient: %s (type=%s)' % (coef, type(coef)))
 
+    def __eq__(self, rhs):
+        if not isinstance(rhs, Term):
+            return False
+        return self.coef == rhs.coef and self.monomial == rhs.monomial
+
     def __str__(self):
         strings = []
         if self.coef != 1 or self.total_degree == 0:
@@ -260,7 +265,7 @@ class Polynomial(object):
         result = Polynomial.zero(self._num_vars)
         for term in self.terms:
             if term.monomial[var_index] > 0:
-                derivative_coef = term.coef * term.monomial[var_index],
+                derivative_coef = term.coef * term.monomial[var_index]
                 derivative_monomial = tuple(exponent - int(i==var_index) 
                                             for i,exponent in enumerate(term.monomial))
                 result._add_term(Term(derivative_coef, derivative_monomial))
@@ -289,6 +294,12 @@ class Polynomial(object):
     def _divide_terms_by(self, rhs):
         for term in self._term_dict.itervalues():
             term._divide_by(rhs)
+
+    def __eq__(self, rhs):
+        rhs = as_polynomial(rhs, self._num_vars)
+        # dictionaries conveniently do an automatic deep comparison
+        # including checking for missing elements
+        return rhs._term_dict == self._term_dict
 
     def __len__(self):
         return len(self._term_dict)
@@ -375,11 +386,12 @@ class Polynomial(object):
         except TypeError:
             return NotImplemented
 
+    def tostring(self, ordering):
         if len(self) == 0:
             return '0'
         else:
             parts = []
-            for term in self.sorted_terms(GrevlexOrdering(), reverse=True):
+            for term in self.sorted_terms(ordering, reverse=True):
                 if term.coef < 0:
                     if len(parts) == 0:
                         parts.append('-')
@@ -394,7 +406,7 @@ class Polynomial(object):
             return ''.join(parts)
 
     def __str__(self):
-        return
+        return self.tostring(GrevlexOrdering())
 
     def __repr__(self):
         return str(self)
@@ -447,7 +459,7 @@ def extract_symbols(module):
 
 def parse(*exprs, **kwargs):
     # Get symbols
-    symbols = set.union(*[extract_symbols(ast.parse(expr)) for expr in exprs])
+    symbols = set.union(*[extract_symbols(ast.parse(expr.strip())) for expr in exprs])
 
     # Check variable order
     variable_order = kwargs.get('variable_order', None)
