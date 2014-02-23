@@ -46,6 +46,12 @@ class PolynomialTest(unittest.TestCase):
         g = parse('2*x + 3*x**2 - 1')
         assert f.squeeze() == g
 
+    def test_evaluate(self):
+        f = parse('2*x + 3*x**2*y + 6*y**5 - 1')
+        self.assertEqual(f(2,10), 4+3*4*10+6*1e+5-1)
+        self.assertEqual(f(-1,0), -3)
+        self.assertEqual(f(0, 1.5), 44.5625)
+
 
 
 if __name__ == '__main__':

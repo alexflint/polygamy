@@ -7,7 +7,8 @@ import itertools
 import ast
 import operator
 
-def mul(*xs):
+def product(xs):
+    '''Compute the product of the elements of XS.'''
     return reduce(operator.mul, xs)
 
 def compare_leftmost(A, B):
@@ -43,6 +44,35 @@ def divide_monomial(A, B):
 def multiply_monomial(A, B):
     '''Multiply the monomial A by the monomial B.'''
     return tuple(A[i] + B[i] for i in range(len(A)))
+
+def superscript_string(v):
+    '''Construct a unicode string containing v as superscript characters.'''
+    assert isinstance(v, numbers.Integral)
+    chars = []
+    if v < 0:
+        chars.append(unichr(0x207B))
+        v = -v
+    for digit in map(int, str(v)):
+        if digit == 1:
+            chars.append(unichr(0x00B9))
+        elif digit == 2:
+            chars.append(unichr(0x00B2))
+        elif digit == 3:
+            chars.append(unichr(0x00B3))
+        else:
+            chars.append(unichr(0x2070 + digit))
+    return ''.join(chars)
+
+def subscript_string(v):
+    '''Construct a unicode string containing v as superscript characters.'''
+    assert isinstance(v, numbers.Integral)
+    chars = []
+    if v < 0:
+        chars.append(unichr(0x208B))
+        v = -v
+    for digit in map(int, str(v)):
+        chars.append(unichr(0x2080 + digit))
+    return ''.join(chars)
 
 class DivisionError(Exception):
     pass
@@ -105,22 +135,6 @@ class Term(object):
             return False
         return self.coef == rhs.coef and self.monomial == rhs.monomial
 
-    def __str__(self):
-        strings = []
-        if self.coef != 1 or self.total_degree == 0:
-            strings.append(str(self.coef))
-        for var_index,exponent in enumerate(self.monomial):
-            if exponent >= 1:
-                if len(self.monomial) <= 4:
-                    var = 'xyzw'[var_index]
-                else:
-                    var = 'x'+str(var_index+1)
-                if exponent == 1:
-                    strings.append(var)
-                else:
-                    strings.append('%s^%d' % (var, exponent))
-        return '*'.join(strings)
-
     def _multiply_by(self, rhs):
         self.coef *= rhs.coef
         self.monomial = multiply_monomial(self.monomial, rhs.monomial)
@@ -153,6 +167,37 @@ class Term(object):
 
     def copy(self):
         return Term(self.coef, self.monomial)
+
+    def format(self, use_superscripts=True):
+        strings = []
+        if self.coef != 1 or self.total_degree == 0:
+            strings.append(str(self.coef))
+        for var_index,exponent in enumerate(self.monomial):
+            if exponent >= 1:
+                if len(self.monomial) <= 4:
+                    var = 'xyzw'[var_index]
+                elif use_superscripts:
+                    var = 'x'+subscript_string(var_index+1)
+                else:
+                    var = 'x'+str(var_index+1)
+
+                if exponent == 1:
+                    strings.append(var)
+                elif use_superscripts:
+                    strings.append(var + superscript_string(exponent))
+                else:
+                    strings.append(var + '^' + str(exponent))
+
+        if use_superscripts:
+            return ''.join(strings)
+        else:
+            return '*'.join(strings)
+
+    def __unicode__(self):
+        return self.format()
+
+    def __str__(self):
+        return unicode(self).encode('utf-8')
 
 def as_polynomial(x, num_vars):
     '''Convert scalars, terms, or monomials to polynomials.'''
@@ -279,7 +324,8 @@ class Polynomial(object):
                  for i in range(self._num_vars) ]
         result = Polynomial.zero(sum(mask))
         for term in self.terms:
-            result.add_term(Term(term.coef, tuple(v for i,v in enumerate(term.monomial) if mask[i])))
+            result._add_term(Term(term.coef, tuple(v for i,v in enumerate(term.monomial) if mask[i])))
+        return result
 
     def _pop_leading_term(self, ordering):
         return self._term_dict.pop(self.leading_term(ordering).monomial)
@@ -354,7 +400,7 @@ class Polynomial(object):
 
         result = Polynomial.zero(self._num_vars)
         for terms in itertools.product(self.terms, repeat=rhs):
-            result._add_term(mul(*terms))
+            result._add_term(product(terms))
         return result
 
     def __floordiv__(self, rhs):
@@ -395,7 +441,14 @@ class Polynomial(object):
         except TypeError:
             return NotImplemented
 
-    def tostring(self, ordering):
+    def __call__(self, *x):
+        '''Evaluate this polynomial at x, which should be an iterable
+        of length self._num_vars.'''
+        assert(len(x) == self._num_vars)
+        return sum(term.coef * product(xi**ai for xi,ai in zip(x,term.monomial))
+                   for term in self.terms)
+
+    def format(self, ordering=GrevlexOrdering(), use_superscripts=True):
         if len(self) == 0:
             return '0'
         else:
@@ -406,16 +459,18 @@ class Polynomial(object):
                         parts.append('-')
                     else:
                         parts.append(' - ')
-                    parts.append(str(-term))
+                    term = -term
                 else:
                     if len(parts) != 0:
                         parts.append(' + ')
-                    parts.append(str(term))
-                
+                parts.append(term.format(use_superscripts))
             return ''.join(parts)
 
+    def __unicode__(self):
+        return self.format()
+
     def __str__(self):
-        return self.tostring(GrevlexOrdering())
+        return unicode(self).encode('utf8')
 
     def __repr__(self):
         return str(self)
