@@ -1,3 +1,5 @@
+from __future__ import division
+
 import abc
 import numbers
 import fractions
@@ -7,6 +9,9 @@ import itertools
 import ast
 import operator
 import types
+import math
+
+inf = float('inf')
 
 def product(xs):
     '''Compute the product of the elements of XS.'''
@@ -74,6 +79,23 @@ def subscript_string(v):
     for digit in map(int, str(v)):
         chars.append(unichr(0x2080 + digit))
     return ''.join(chars)
+
+
+def as_polynomial(x, num_vars):
+    '''Convert scalars, terms, or monomials to polynomials.'''
+    if isinstance(x, numbers.Real):
+        # Interpret scalars as constant polynomials
+        return Polynomial.create([Term(x, (0,)*num_vars)])
+    elif isinstance(x, tuple):
+        # Interpret tuples as monomials
+        return Polynomial.create([Term(1, x)])
+    elif isinstance(x, Term):
+        # Interpret terms as length-1 polynomials
+        return Polynomial.create([x])
+    elif isinstance(x, Polynomial):
+        return x
+    else:
+        raise TypeError('Cannot convert %s to polynomial' % type(x))
 
 class DivisionError(Exception):
     pass
@@ -151,7 +173,7 @@ class Term(object):
         result._multiply_by(rhs)
         return result
 
-    def __div__(self, rhs):
+    def __truediv__(self, rhs):
         result = self.copy()
         result._divide_by(rhs)
         return result
@@ -159,14 +181,25 @@ class Term(object):
     def __neg__(self):
         return Term(-self.coef, self.monomial)
 
+    def __call__(self, *x):
+        '''Evaluate this term at x.'''
+        assert len(x) == len(self.monomial)
+        return float(self.coef) * product(xi**ai for xi,ai in zip(x,self.monomial))
+
     def divides(self, rhs):
         return can_divide_monomial(rhs.monomial, self.monomial)
 
     @property
     def total_degree(self):
+        '''Return the sum of the exponents in this term.'''
         return sum(self.monomial)
 
+    def rationalize(self):
+        '''Return a copy of this term in which the coefficient is a Fraction object.'''
+        return Term(fractions.Fraction(self.coef), self.monomial)
+
     def copy(self):
+        '''Return a copy of this term.'''
         return Term(self.coef, self.monomial)
 
     def python_expression(self, varnames):
@@ -207,22 +240,6 @@ class Term(object):
 
     def __str__(self):
         return unicode(self).encode('utf-8')
-
-def as_polynomial(x, num_vars):
-    '''Convert scalars, terms, or monomials to polynomials.'''
-    if isinstance(x, numbers.Real):
-        # Interpret scalars as constant polynomials
-        return Polynomial.create([Term(x, (0,)*num_vars)])
-    elif isinstance(x, tuple):
-        # Interpret tuples as monomials
-        return Polynomial.create([Term(1, x)])
-    elif isinstance(x, Term):
-        # Interpret terms as length-1 polynomials
-        return Polynomial.create([x])
-    elif isinstance(x, Polynomial):
-        return x
-    else:
-        raise TypeError('Cannot convert %s to polynomial' % type(x))
 
 class ComparableTerm(object):
     @classmethod
@@ -274,6 +291,13 @@ class Polynomial(object):
     @property
     def terms(self):
         return self._term_dict.viewvalues()
+
+    @property
+    def total_degree(self):
+        if len(self) == 0:
+            return 0
+        else:
+            return max(term.total_degree for term in self.terms)
 
     def sorted_terms(self, ordering, reverse=False):
         return sorted(self.terms, key=ComparableTerm.factory(ordering), reverse=reverse)
@@ -336,6 +360,11 @@ class Polynomial(object):
             result._add_term(Term(term.coef, tuple(v for i,v in enumerate(term.monomial) if mask[i])))
         return result
 
+    def rationalize(self):
+        '''Return a copy of this polynomial in which all coefficients
+        are Fraction objects.'''
+        return Polynomial.create([term.rationalize() for term in self.terms])
+
     def _pop_leading_term(self, ordering):
         return self._term_dict.pop(self.leading_term(ordering).monomial)
 
@@ -393,14 +422,6 @@ class Polynomial(object):
             result._add_term(lterm*rterm)
         return result
 
-    def __div__(self, rhs):
-        # We only support division by a scalar. To perform polynomial
-        # division, use __mod__ to compute the remainder, or
-        # __floordiv__ to compute the quotient, or divide_by() to
-        # compute both
-        if isinstance(rhs, numbers.Rational):
-            return self * fractions.Fraction(1, rhs)
-
     def __pow__(self, rhs):
         if not isinstance(rhs, numbers.Integral):
             raise TypeError('Cannot raise a polynomial to the power of a %s' % type(rhs))
@@ -411,6 +432,14 @@ class Polynomial(object):
         for terms in itertools.product(self.terms, repeat=rhs):
             result._add_term(product(terms))
         return result
+
+    def __truediv__(self, rhs):
+        # We only support division by a scalar. To perform polynomial
+        # division, use __mod__ to compute the remainder, or
+        # __floordiv__ to compute the quotient, or divide_by() to
+        # compute both
+        if isinstance(rhs, numbers.Rational):
+            return self * fractions.Fraction(1, rhs)
 
     def __floordiv__(self, rhs):
         quotient,remainder = self.divide_by(rhs, GrevlexOrdering())
@@ -454,8 +483,23 @@ class Polynomial(object):
         '''Evaluate this polynomial at x, which should be an iterable
         of length self._num_vars.'''
         assert len(x) == self._num_vars
-        return sum(term.coef * product(xi**ai for xi,ai in zip(x,term.monomial))
-                   for term in self.terms)
+        return sum(term(*x) for term in self.terms)
+
+    def evaluate_at_infinity(self):
+        '''Compute the limiting value of this polynomial as x tends to infinity.'''
+        assert self._num_vars == 1
+        if len(self) == 0:
+            return 0
+        else:
+            return self.leading_term(LexOrdering())(inf)
+
+    def evaluate_at_minus_infinity(self):
+        '''Compute the limiting value of this polynomial as x tends to minus infinity.'''
+        assert self._num_vars == 1
+        if len(self) == 0:
+            return 0
+        else:
+            return self.leading_term(LexOrdering())(-inf)
 
     def compile(self):
         '''Return a python function that can be used to evaluate this polynomial very quickly.'''
@@ -565,6 +609,105 @@ def polish_univariate_root(polynomial, root, **kwargs):
                                  fprime2=second_derivative.compile(),
                                  x0=root,
                                  **kwargs)
+
+def count_sign_changes(ys):
+    signs = [ cmp(y,0) for y in ys if y != 0 ]  # ignore all zero evaluations
+    return sum(signs[i] != signs[i+1] for i in range(len(signs)-1))
+
+class SturmChain(object):
+    def __init__(self, polynomial):
+        assert polynomial.num_vars == 1
+        self._chain = [ polynomial.copy(), polynomial.partial_derivative(0) ]
+        while self._chain[-1].total_degree > 0:
+            self._chain.append(-(self._chain[-2] % self._chain[-1]))
+        self._compiled = [ p.compile() for p in self._chain ]
+
+    def evaluate(self, x):
+        if x == inf:
+            return count_sign_changes(f.evaluate_at_infinity() for f in self._chain)
+        elif x == -inf:
+            return count_sign_changes(f.evaluate_at_minus_infinity() for f in self._chain)
+        else:
+            return count_sign_changes(f(x) for f in self._compiled)
+
+    def count_roots_between(self, a, b):
+        return self.evaluate(a) - self.evaluate(b)
+
+    def count_roots(self):
+        return self.count_roots_between(-inf, inf)
+
+def binary_search_continuous(f, target, low, high):
+    '''Perform a floating-point binary search over the interval
+    [low,high], evaluating the monotonically increasing function f at
+    each point until f(x)=target.'''
+    low = float(low)
+    high = float(high)
+
+    while True:
+        x = (low + high) / 2
+        y = f(x)
+        if y == target:
+            return x
+        elif y < target:
+            low = x
+        else:
+            high = x
+
+def bracket_univariate_roots(polynomial, lower=-inf, upper=inf):
+    '''Given a polynomial with N roots, return N+1 floating
+    (K[0],...,K[n]) point numbers such that the i-th root is between
+    K[i] and K[i+1].'''
+    assert lower < inf
+    assert upper > -inf
+
+    # Count the total number of roots we're after
+    s = SturmChain(polynomial)
+    num_roots = s.count_roots_between(lower, upper)
+
+    # Find a finite lower bound
+    if lower == -inf:
+        lower = -1.004325326  # eek this is a hack to avoid hitting multiple roots
+        while s.count_roots_between(lower, upper) < num_roots:
+            lower *= 10
+
+    # Find a finite upper bound
+    if upper == inf:
+        upper = 1.009548275  # eek this is a hack to avoid hitting multiple roots
+        while s.count_roots_between(lower, upper) < num_roots:
+            upper *= 10
+
+    # Now isolate the roots
+    brackets = [lower]
+    for i in range(num_roots-1):
+        bracket = binary_search_continuous(lambda x: s.count_roots_between(lower,x), 1, lower, upper)
+        brackets.append(bracket)
+        lower = bracket
+    brackets.append(upper)
+
+    return brackets
+
+def bisect_bracket(f, a, b, tol):
+    '''Given a function f with a root between A and B, return a new
+    interval (C,D) containing the root such that D-C < TOL.'''
+    assert a < b
+    assert tol > 0
+
+    ya = f(a)
+    yb = f(b)
+    assert ya != 0
+    assert yb != 0
+    assert (ya<0) != (yb<0)
+
+    while b-a > tol:
+        c = (a + b) / 2
+        yc = f(c)
+        if (yc<0) == (ya<0):
+            a = c
+            ya = yc
+        else:
+            b = c
+            yb = yc
+    return (a,b)
 
 def parse(*exprs, **kwargs):
     # Get symbols
