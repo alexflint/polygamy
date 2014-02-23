@@ -3,30 +3,12 @@ import unittest
 from polysolve import *
 
 class PolynomialTest(unittest.TestCase):
-    def test_add(self):
-        p = Polynomial.create( [ Term(10,(0,0,0)), Term(3,(1,0,0)), Term(1,(0,2,0)), Term(1,(1,1,2)) ] )
-        q = Polynomial.create( [ Term(3,(1,0,0)), Term(1,(0,2,0)), Term(1,(1,1,2)) ] )
-        print p + q
-        print p - q
-        print p + 100
-
-    def test_mul(self):
-        p = Polynomial.create( [ Term(2,(1,0)), Term(5,(2,0)) ] )
-        q = Polynomial.create( [ Term(1,(0,1)), Term(10,(0,2)) ] )
-        print p
-        print p*10
-        return
-        print p*Term(1,(0,1))
-        print p*Term(1,(1,1))
-        print p*q
-        print p*p
-
     def test_remainder(self):
-        h1,h2,f = parse('x**2 + z**2 - 1',
-                        'x**2 + y**2 + (z-1)**2 - 4',
-                        'x**2 + y**2*z/2 - z - 1')
-
-        print remainder(f, [h1,h2], LexOrdering())
+        h1,h2,f,rem = parse('x**2 + z**2 - 1',
+                            'x**2 + y**2 + (z-1)**2 - 4',
+                            'x**2 + y**2*z/2 - z - 1',
+                            'y**2*z/2 - z**2 - z')
+        self.assertEqual(remainder(f, [h1,h2], LexOrdering()), rem)
 
     def test_derivative(self):
         f, J_f_wrt_x, J_f_wrt_y = parse('2*x + 3*x*y**2 + 8*y**6 + 6',
@@ -71,31 +53,18 @@ class PolynomialTest(unittest.TestCase):
         print 'Time to compile: ',timeit.timeit(lambda:f.compile(), number=10000)/10000
 
     def test_sturm(self):
-        f = parse('(x-0.5)*(x-1.5)*(x-2.5)*(x-3.5)')
-        s = SturmChain(f)
-
+        s = SturmChain(parse('(x-0.5)*(x-1.5)*(x-2.5)*(x-3.5)'))
         self.assertEqual(s.count_roots(), 4)
         self.assertEqual(s.count_roots_between(0, 10), 4)
-
         self.assertEqual(s.count_roots_between(0, 0), 0)
-        self.assertEqual(s.count_roots_between(0, 1), 1)
-        self.assertEqual(s.count_roots_between(0, 2), 2)
         self.assertEqual(s.count_roots_between(0, 3), 3)
         self.assertEqual(s.count_roots_between(0, 4), 4)
-
-        self.assertEqual(s.count_roots_between(1, 1), 0)
-        self.assertEqual(s.count_roots_between(1, 2), 1)
-        self.assertEqual(s.count_roots_between(1, 3), 2)
         self.assertEqual(s.count_roots_between(1, 4), 3)
-
         self.assertEqual(s.count_roots_between(2, 2), 0)
-        self.assertEqual(s.count_roots_between(2, 3), 1)
         self.assertEqual(s.count_roots_between(2, 4), 2)
-
         self.assertEqual(s.count_roots_between(3, 3), 0)
         self.assertEqual(s.count_roots_between(3, 4), 1)
         self.assertEqual(s.count_roots_between(4, 4), 0)
-
         self.assertEqual(s.count_roots_between(.5-1e-8, .5+1e-8), 1)
         self.assertEqual(s.count_roots_between(-1e+15, 1e+15), 4)
 
@@ -122,25 +91,41 @@ class PolynomialTest(unittest.TestCase):
             self.assertLess(brackets[i], z)
             self.assertGreater(brackets[i+1], z)
 
-    def test_bracket_univariate_roots(self):
+    def test_isolate_univariate_roots(self):
         f = parse('(x-1)*(x-2)*(x-3)')
-        brackets = bracket_univariate_roots(f)
+        brackets = isolate_univariate_roots(f)
         self.validate_brackets(brackets, (1,2,3))
 
-    def test_bracket_univariate_roots2(self):
+    def test_isolate_univariate_roots2(self):
         f = parse('(x-1)**2*(x-2)*(x-3)')
-        brackets = bracket_univariate_roots(f)
+        brackets = isolate_univariate_roots(f)
         self.validate_brackets(brackets, (1,2,3))
 
-    def test_bracket_univariate_roots3(self):
+    def test_isolate_univariate_roots3(self):
         f = parse('(x-1)*(x-1.000001)*(x-1e+8)')
-        brackets = bracket_univariate_roots(f.rationalize())
+        brackets = isolate_univariate_roots(f.rationalize())
         self.validate_brackets(brackets, (1, 1.000001, 1e+8))
 
     def test_bisect_bracket(self):
         f = parse('(x-1)*(x-2)*(x-3)')
         bracket = bisect_bracket(f, -1.2, 1.8, 1e-5)
         self.validate_brackets(bracket, [1])
+
+    def assert_all_near(self, xs, ys, places=8):
+        for x,y in zip(xs,ys):
+            self.assertAlmostEqual(x,y,places=places)
+
+    def test_find_univariate_roots(self):
+        f = parse('(x-1)*(x-2)*(x-3)')
+        roots,brackets = find_univariate_roots(f, tol=1e-8)
+        self.assert_all_near(roots, (1,2,3), 8)
+        self.validate_brackets(brackets, (1,2,3))
+
+        f = parse('(x-10)*(x-200)*(x-3000)**3')
+        roots,brackets = find_univariate_roots(f, tol=1e-8)
+        self.assert_all_near(roots, (10,200,3000), 2)
+        self.validate_brackets(brackets, (10,200,3000))
+
 
 
 if __name__ == '__main__':

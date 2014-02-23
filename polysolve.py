@@ -653,7 +653,7 @@ def binary_search_continuous(f, target, low, high):
         else:
             high = x
 
-def bracket_univariate_roots(polynomial, lower=-inf, upper=inf):
+def isolate_univariate_roots(polynomial, lower=-inf, upper=inf):
     '''Given a polynomial with N roots, return N+1 floating
     (K[0],...,K[n]) point numbers such that the i-th root is between
     K[i] and K[i+1].'''
@@ -686,7 +686,7 @@ def bracket_univariate_roots(polynomial, lower=-inf, upper=inf):
 
     return brackets
 
-def bisect_bracket(f, a, b, tol):
+def bisect_bracket(f, a, b, tol, threshold=1e-10):
     '''Given a function f with a root between A and B, return a new
     interval (C,D) containing the root such that D-C < TOL.'''
     assert a < b
@@ -701,6 +701,10 @@ def bisect_bracket(f, a, b, tol):
     while b-a > tol:
         c = (a + b) / 2
         yc = f(c)
+        if abs(yc) < threshold:
+            # When yc falls below numerical precision we can no longer
+            # keep reducing the search window
+            return a,b
         if (yc<0) == (ya<0):
             a = c
             ya = yc
@@ -708,6 +712,17 @@ def bisect_bracket(f, a, b, tol):
             b = c
             yb = yc
     return (a,b)
+
+def find_univariate_roots(polynomial, lower=-inf, upper=inf, tol=1e-8):
+    brackets = isolate_univariate_roots(polynomial, lower, upper)
+    f = polynomial.compile()
+    roots = []
+    brackets = []
+    for i in range(len(brackets)-1):
+        a,b = bisect_bracket(f, brackets[i], brackets[i+1], tol)
+        roots.append((a+b)/2)
+        brackets.append((a,b))
+    return roots, brackets
 
 def parse(*exprs, **kwargs):
     # Get symbols
