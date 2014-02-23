@@ -6,6 +6,7 @@ import StringIO
 import itertools
 import ast
 import operator
+import types
 
 def product(xs):
     '''Compute the product of the elements of XS.'''
@@ -168,7 +169,15 @@ class Term(object):
     def copy(self):
         return Term(self.coef, self.monomial)
 
+    def python_expression(self, varnames):
+        '''Construct a python expression string representing this polynomial.'''
+        assert len(varnames) == len(self.monomial)
+        return '*'.join([str(self.coef)] + ['%s**%d' % (var,exponent)
+                                            for var,exponent in zip(varnames,self.monomial)
+                                            if exponent>0])
+
     def format(self, use_superscripts=True):
+        '''Construct a string representation of this polynomial.'''
         strings = []
         if self.coef != 1 or self.total_degree == 0:
             strings.append(str(self.coef))
@@ -304,8 +313,8 @@ class Polynomial(object):
     def partial_derivative(self, var_index):
         '''Return a polynomial representing the partial derivative of
         this polynomial with respect to the its i-th variable.'''
-        assert(var_index >= 0)
-        assert(var_index < self._num_vars)
+        assert var_index >= 0
+        assert var_index < self._num_vars
 
         result = Polynomial.zero(self._num_vars)
         for term in self.terms:
@@ -444,11 +453,31 @@ class Polynomial(object):
     def __call__(self, *x):
         '''Evaluate this polynomial at x, which should be an iterable
         of length self._num_vars.'''
-        assert(len(x) == self._num_vars)
+        assert len(x) == self._num_vars
         return sum(term.coef * product(xi**ai for xi,ai in zip(x,term.monomial))
                    for term in self.terms)
 
+    def compile(self):
+        '''Return a python function that can be used to evaluate this polynomial very quickly.'''
+        varnames = tuple('x'+str(i) for i in range(self._num_vars))
+        expr = self.python_expression(varnames)
+        source = 'def f(%s): return %s' % (','.join(varnames), expr)
+        code = compile(source, '<polynomial>', mode='exec')
+        namespace = {}
+        exec code in namespace
+        return namespace['f']
+        
+    def python_expression(self, varnames=None):
+        '''Construct a representation of this polynomial as a python expression string.'''
+        if varnames is None:
+            varnames = tuple('x'+str(i) for i in range(self._num_vars))
+        if len(self) == 0:
+            return '0'
+        else:
+            return ' + '.join(term.python_expression(varnames) for term in self.terms)
+
     def format(self, ordering=GrevlexOrdering(), use_superscripts=True):
+        '''Construct a string representation of this polynomial.'''
         if len(self) == 0:
             return '0'
         else:
@@ -476,11 +505,11 @@ class Polynomial(object):
         return str(self)
 
 def gcd(A, B):
-    assert(len(A) == len(B))
+    assert len(A) == len(B)
     return tuple(min(A[i],B[i]) for i in range(len(A)))
 
 def lcm(A, B):
-    assert(len(A) == len(B))
+    assert len(A) == len(B)
     return tuple(max(A[i],B[i]) for i in range(len(A)))
 
 def remainder(f, H, ordering):
@@ -509,9 +538,6 @@ def s_poly(f, g, ordering):
 def gbasis(F):
     pass
 
-
-
-
 def show_division(a, b):
     if isinstance(a, basestring):
         a,b = parse(a,b)
@@ -520,6 +546,25 @@ def show_division(a, b):
 
 def extract_symbols(module):
     return { node.id for node in ast.walk(module) if isinstance(node, ast.Name) }
+
+def polynomial_jacobian(polynomial):
+    partials = [ polynomial.partial_derivative(i) for i in range(polynomial.num_vars) ]
+    return lambda x: [ partial(x) for partial in partials ]
+
+def polynomial_hessian(polynomial):
+    partials = [ polynomial.partial_derivative(i) for i in range(polynomial.num_vars) ]
+    return lambda x: [ partial(x) for partial in partials ]
+
+def polish_univariate_root(polynomial, root, **kwargs):
+    import scipy.optimize
+    assert polynomial.num_vars == 1
+    first_derivative = polynomial.partial_derivative(0)
+    second_derivative = first_derivative.partial_derivative(0)
+    return scipy.optimize.newton(func=polynomial.compile(),
+                                 fprime=first_derivative.compile(),
+                                 fprime2=second_derivative.compile(),
+                                 x0=root,
+                                 **kwargs)
 
 def parse(*exprs, **kwargs):
     # Get symbols
@@ -545,4 +590,3 @@ def parse(*exprs, **kwargs):
         return polynomials[0]
     else:
         return polynomials
-    
