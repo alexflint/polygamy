@@ -158,6 +158,9 @@ class Term(object):
             return False
         return self.coef == rhs.coef and self.monomial == rhs.monomial
 
+    def __ne__(self, rhs):
+        return not (self == rhs)
+
     def _multiply_by(self, rhs):
         self.coef *= rhs.coef
         self.monomial = multiply_monomial(self.monomial, rhs.monomial)
@@ -180,6 +183,14 @@ class Term(object):
 
     def __neg__(self):
         return Term(-self.coef, self.monomial)
+
+    def evaluate_partial(self, var_index, value):
+        '''Create a new term with by evaluating this term at the given
+        value for the given variable. The result formally contains the
+        same number of variables but the evaluated variable always has
+        an exponent of zero.'''
+        return Term(self.coef * value**self.monomial[var_index],
+                    tuple(0 if i==var_index else a for i,a in enumerate(self.monomial)))
 
     def __call__(self, *x):
         '''Evaluate this term at x.'''
@@ -316,6 +327,9 @@ class Polynomial(object):
 
     def divide_by(self, rhs, ordering):
         rhs = as_polynomial(rhs, self._num_vars)
+        if rhs == 0:
+            raise DivisionError('Cannot divide by zero')
+
         lt_rhs = rhs.leading_term(ordering)
         tt_rhs = rhs.trailing_terms(ordering)
 
@@ -393,6 +407,9 @@ class Polynomial(object):
         # dictionaries conveniently do an automatic deep comparison
         # including checking for missing elements
         return rhs._term_dict == self._term_dict
+
+    def __ne__(self, rhs):
+        return not (self == rhs)
 
     def __len__(self):
         return len(self._term_dict)
@@ -485,6 +502,13 @@ class Polynomial(object):
         assert len(x) == self._num_vars
         return sum(term(*x) for term in self.terms)
 
+    def evaluate_partial(self, var, value):
+        '''Evaluate this polynomial given a variable index and a value
+        for that variable.  The result of this operation is always a
+        new polynomial in the same number of variables, although the
+        evaluated variable will not appear in any term.'''
+        return Polynomial.create([ term.evaluate_partial(var,value) for term in self.terms ])
+
     def evaluate_at_infinity(self):
         '''Compute the limiting value of this polynomial as x tends to infinity.'''
         assert self._num_vars == 1
@@ -548,9 +572,11 @@ class Polynomial(object):
     def __repr__(self):
         return str(self)
 
-def gcd(A, B):
-    assert len(A) == len(B)
-    return tuple(min(A[i],B[i]) for i in range(len(A)))
+def gcd(f, g):
+    assert f.num_vars == g.num_vars
+    while g != 0:
+        f, g = g, f % g
+    return f / f.leading_term(LexOrdering()).coef
 
 def lcm(A, B):
     assert len(A) == len(B)
@@ -588,31 +614,10 @@ def show_division(a, b):
     q,r = a.divide_by(b)
     print '[%s] = (%s) * [%s] + (%s)' % (a, q, b, r)
 
-def extract_symbols(module):
-    return { node.id for node in ast.walk(module) if isinstance(node, ast.Name) }
-
-def polynomial_jacobian(polynomial):
-    partials = [ polynomial.partial_derivative(i) for i in range(polynomial.num_vars) ]
-    return lambda x: [ partial(x) for partial in partials ]
-
-def polynomial_hessian(polynomial):
-    partials = [ polynomial.partial_derivative(i) for i in range(polynomial.num_vars) ]
-    return lambda x: [ partial(x) for partial in partials ]
-
-def polish_univariate_root(polynomial, root, **kwargs):
-    import scipy.optimize
-    assert polynomial.num_vars == 1
-    first_derivative = polynomial.partial_derivative(0)
-    second_derivative = first_derivative.partial_derivative(0)
-    return scipy.optimize.newton(func=polynomial.compile(),
-                                 fprime=first_derivative.compile(),
-                                 fprime2=second_derivative.compile(),
-                                 x0=root,
-                                 **kwargs)
-
 def count_sign_changes(ys):
     signs = [ cmp(y,0) for y in ys if y != 0 ]  # ignore all zero evaluations
     return sum(signs[i] != signs[i+1] for i in range(len(signs)-1))
+
 
 class SturmChain(object):
     def __init__(self, polynomial):
@@ -696,7 +701,7 @@ def bisect_bracket(f, a, b, tol, threshold=1e-10):
     yb = f(b)
     assert ya != 0
     assert yb != 0
-    assert (ya<0) != (yb<0)
+    assert (ya<0) != (yb<0), 'a=%f, b=%f, ya=%f, yb=%f' % (a,b,ya,yb)
 
     while b-a > tol:
         c = (a + b) / 2
@@ -713,16 +718,54 @@ def bisect_bracket(f, a, b, tol, threshold=1e-10):
             yb = yc
     return (a,b)
 
-def find_univariate_roots(polynomial, lower=-inf, upper=inf, tol=1e-8):
-    brackets = isolate_univariate_roots(polynomial, lower, upper)
+def polynomial_vector(polynomials):
+    import numpy as np
+    fs = [ p.compile() for p in polynomials ]
+    return lambda *x: np.array([ f(*x) for f in fs ])
+
+def polynomial_gradient(polynomial):
+    return polynomial_vector(polynomial.partial_derivative(i) for i in range(polynomial.num_vars))
+
+def polynomial_jacobian(polynomials):
+    import numpy as np
+    gradients = [ polynomial_gradient(p) for p in polynomials ]
+    return lambda *x: np.array([ gradient(*x) for gradient in gradients ])
+
+def polish_univariate_root(polynomial, root, **kwargs):
+    import scipy.optimize
+    assert polynomial.num_vars == 1
+    first_derivative = polynomial.partial_derivative(0)
+    second_derivative = first_derivative.partial_derivative(0)
+    return scipy.optimize.newton(func=polynomial.compile(),
+                                 fprime=first_derivative.compile(),
+                                 fprime2=second_derivative.compile(),
+                                 x0=root,
+                                 **kwargs)
+
+def polish_multivariate_root(polynomials, root, **kwargs):
+    import scipy.optimize
+    fun = polynomial_vector(polynomials)
+    jac = polynomial_jacobian(polynomials)
+    return scipy.optimize.root(fun=lambda x: fun(*x),
+                               jac=lambda x: jac(*x),
+                               x0=root,
+                               **kwargs)
+
+def solve_univariate(polynomial, lower=-inf, upper=inf, tol=1e-8):
+    '''Find all roots of a univariate polynomial. Also return upper
+    and lower bounds for each root.'''
+    bounds = isolate_univariate_roots(polynomial, lower, upper)
     f = polynomial.compile()
     roots = []
     brackets = []
-    for i in range(len(brackets)-1):
-        a,b = bisect_bracket(f, brackets[i], brackets[i+1], tol)
+    for i in range(len(bounds)-1):
+        a,b = bisect_bracket(f, bounds[i], bounds[i+1], tol)
         roots.append((a+b)/2)
         brackets.append((a,b))
     return roots, brackets
+
+def extract_symbols(module):
+    return { node.id for node in ast.walk(module) if isinstance(node, ast.Name) }
 
 def parse(*exprs, **kwargs):
     # Get symbols

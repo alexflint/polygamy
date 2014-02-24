@@ -10,6 +10,12 @@ class PolynomialTest(unittest.TestCase):
                             'y**2*z/2 - z**2 - z')
         self.assertEqual(remainder(f, [h1,h2], LexOrdering()), rem)
 
+    def test_gcd(self):
+        f,g,h = parse('(x**2 + x) * 3',
+                      '(x**2 + x)**2 * (x + 2)',
+                      '(x**2 + x)')
+        self.assertEqual(gcd(f,g), h)
+
     def test_derivative(self):
         f, J_f_wrt_x, J_f_wrt_y = parse('2*x + 3*x*y**2 + 8*y**6 + 6',
                                         '2   + 3*y**2',
@@ -27,6 +33,14 @@ class PolynomialTest(unittest.TestCase):
         self.assertEqual(f(2,10), 4+3*4*10+6*1e+5-1)
         self.assertEqual(f(-1,0), -3)
         self.assertEqual(f(0, 1.5), 44.5625)
+
+    def test_evaluate_partial(self):
+        f,g,h = parse('3*x**2*y + 2*x + y**5 - 1',
+                      'y**5 + 12*y + 3',
+                      '6*x**2 + 2*x + 31')
+        self.assertEqual(f.evaluate_partial(0,2), g)
+        self.assertEqual(f.evaluate_partial(1,2), h)
+        self.assertEqual(f.evaluate_partial(0,0).evaluate_partial(1,0), -1)
 
     def test_compile(self):
         f = parse('2*x + 3*x**2*y + 6*y**5 - 1')
@@ -112,21 +126,30 @@ class PolynomialTest(unittest.TestCase):
         self.validate_brackets(bracket, [1])
 
     def assert_all_near(self, xs, ys, places=8):
+        self.assertEqual(len(xs), len(ys))
         for x,y in zip(xs,ys):
             self.assertAlmostEqual(x,y,places=places)
 
-    def test_find_univariate_roots(self):
+    def test_solve_univariate(self):
         f = parse('(x-1)*(x-2)*(x-3)')
-        roots,brackets = find_univariate_roots(f, tol=1e-8)
+        roots,brackets = solve_univariate(f, tol=1e-8)
         self.assert_all_near(roots, (1,2,3), 8)
-        self.validate_brackets(brackets, (1,2,3))
 
         f = parse('(x-10)*(x-200)*(x-3000)**3')
-        roots,brackets = find_univariate_roots(f, tol=1e-8)
+        roots,brackets = solve_univariate(f, tol=1e-8)
         self.assert_all_near(roots, (10,200,3000), 2)
-        self.validate_brackets(brackets, (10,200,3000))
 
+    def test_polish_multivariate_root(self):
+        # the following system has a root at x=1, y=2
+        fs = parse('(x + y - 3) * (x*y**2 - 1)',
+                   '(x - 1) * (x - 10)',
+                   '(y - 2)**2')
+        v = polish_multivariate_root(fs, (1.1, 2.2), method='lm')
+        print 'v:',v
 
+    def test_double_root(self):
+        f = parse('-63*x**2 + -2700 + 1*x**3 + 1080*x**1')
+        print isolate_univariate_roots(f)
 
 if __name__ == '__main__':
     unittest.main()
