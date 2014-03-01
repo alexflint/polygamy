@@ -1,20 +1,39 @@
+from __future__ import division
+
 import unittest
 
 from polysolve import *
+from modulo import *
+from ring import *
 
 class PolynomialTest(unittest.TestCase):
+    def test_getitem(self):
+        f = parse('2*x + 11*x*y**2 - 1')
+        self.assertEqual(f[1,0], 2)
+        self.assertEqual(f[1,2], 11)
+        self.assertEqual(f[0,0], -1)
+        self.assertEqual(f[1,3], 0)
+        self.assertEqual(f[0,1], 0)
+
+    def test_contains(self):
+        f = parse('2*x + 11*x*y**2 - 1')
+        self.assertTrue((1,0) in f)
+        self.assertTrue((1,2) in f)
+        self.assertTrue((0,0) in f)
+        self.assertTrue((1,3) not in f)
+        self.assertTrue((0,1) not in f)
+
+    def test_normalized(self):
+        f,g = parse('2*x**2 + 4*x + 8',
+                    'x**2 + 2*x + 4')
+        self.assertEqual(f.normalized(), g)
+    
     def test_remainder(self):
         h1,h2,f,rem = parse('x**2 + z**2 - 1',
                             'x**2 + y**2 + (z-1)**2 - 4',
                             'x**2 + y**2*z/2 - z - 1',
                             'y**2*z/2 - z**2 - z')
         self.assertEqual(remainder(f, [h1,h2], LexOrdering()), rem)
-
-    def test_gcd(self):
-        f,g,h = parse('(x**2 + x) * 3',
-                      '(x**2 + x)**2 * (x + 2)',
-                      '(x**2 + x)')
-        self.assertEqual(gcd(f,g), h)
 
     def test_derivative(self):
         f, J_f_wrt_x, J_f_wrt_y = parse('2*x + 3*x*y**2 + 8*y**6 + 6',
@@ -130,14 +149,23 @@ class PolynomialTest(unittest.TestCase):
         for x,y in zip(xs,ys):
             self.assertAlmostEqual(x,y,places=places)
 
-    def test_solve_univariate(self):
+    def test_solve_univariate_via_sturm(self):
         f = parse('(x-1)*(x-2)*(x-3)')
-        roots,brackets = solve_univariate(f, tol=1e-8)
+        roots,brackets = solve_univariate_via_sturm(f, tol=1e-8)
         self.assert_all_near(roots, (1,2,3), 8)
 
         f = parse('(x-10)*(x-200)*(x-3000)**3')
-        roots,brackets = solve_univariate(f, tol=1e-8)
+        roots,brackets = solve_univariate_via_sturm(f, tol=1e-8)
         self.assert_all_near(roots, (10,200,3000), 2)
+
+    def test_solve_univariate_via_companion(self):
+        f = parse('(x-1)*(x-2)*(x-3)')
+        roots = solve_univariate_via_companion(f)
+        self.assert_all_near(roots, (1,2,3), 8)
+
+        f = parse('(x-10)*(x-200)*(x-3000)**3')
+        roots = solve_univariate_via_companion(f)
+        self.assert_all_near(roots, (10,200,3000), 1)
 
     def test_polish_multivariate_root(self):
         # the following system has a root at x=1, y=2
@@ -145,11 +173,79 @@ class PolynomialTest(unittest.TestCase):
                    '(x - 1) * (x - 10)',
                    '(y - 2)**2')
         v = polish_multivariate_root(fs, (1.1, 2.2), method='lm')
-        print 'v:',v
 
     def test_double_root(self):
         f = parse('-63*x**2 + -2700 + 1*x**3 + 1080*x**1')
-        print isolate_univariate_roots(f)
+        #print isolate_univariate_roots(f)
+
+class ModuloTest(unittest.TestCase):
+    def test_comparisons(self):
+        a = ModuloInteger(3, 11)
+        self.assertEqual(a, 3)
+        self.assertEqual(3, a)
+        self.assertEqual(a, ModuloInteger(3,11))
+        self.assertLess(a, 4)
+        self.assertGreater(a, 0)
+
+    def test_addition(self):
+        a = ModuloInteger(4, 7)
+        self.assertEqual(a + 2, 6)
+        self.assertEqual(a + 4, 1)
+        self.assertEqual(6 + a, 3)
+        self.assertEqual(a + ModuloInteger(2,5), 6)
+        self.assertEqual(a + ModuloInteger(4,5), 1)
+
+    def test_subtraction(self):
+        a = ModuloInteger(4, 7)
+        self.assertEqual(a - 1, 3)
+        self.assertEqual(a - 4, 0)
+        self.assertEqual(a - ModuloInteger(1,5), 3)
+        self.assertEqual(a - ModuloInteger(4,5), 0)
+
+    def test_subtraction(self):
+        a = ModuloInteger(4, 7)
+        self.assertEqual(a - 1, 3)
+        self.assertEqual(a - 4, 0)
+        self.assertEqual(5 - a, 1)
+        self.assertEqual(3 - a, 6)
+        self.assertEqual(a - ModuloInteger(1,5), 3)
+        self.assertEqual(a - ModuloInteger(4,5), 0)
+
+    def test_multiplication(self):
+        a = ModuloInteger(2,5)
+        self.assertEqual(a*2, 4)
+        self.assertEqual(a*3, 1)
+        self.assertEqual(a*0, 0)
+        self.assertEqual(2*a, 4)
+        self.assertEqual(3*a, 1)
+        self.assertEqual(0*a, 0)
+
+    def test_inverse(self):
+        self.assertEqual(multiplicative_inverse(2, 5), 3)
+        self.assertEqual(multiplicative_inverse(9, 17), 2)
+        self.assertEqual(multiplicative_inverse(5, 11), 9)
+        self.assertEqual(ModuloInteger(2,5).inverse, 3)
+        self.assertEqual(ModuloInteger(9,17).inverse, 2)
+        self.assertEqual(ModuloInteger(5,11).inverse, 9)
+
+    def test_division(self):
+        a = ModuloInteger(2,5)
+        self.assertEqual(a / 1, a)
+        self.assertEqual(a / 1, 2)
+        self.assertEqual(1 / a, 3)
+        self.assertEqual(4 / a, 2)
+        self.assertEqual(3 / a, 4)
+        self.assertEqual(a / 2, 1)
+        self.assertEqual(2 / a, 1)
+
+
+class RingTest(unittest.TestCase):
+    def test_gcd(self):
+        f,g,h = parse('(x**2 + x) * 3',
+                      '(x**2 + x)**2 * (x + 2)',
+                      '(x**2 + x)')
+        self.assertEqual(ring.gcd(f,g).normalized(), h)
+
 
 if __name__ == '__main__':
     unittest.main()
