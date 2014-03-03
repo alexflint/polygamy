@@ -4,6 +4,7 @@ import exceptions
 import numbers
 
 import ring
+import unicode_rendering
 
 class ModularInverseError(exceptions.ArithmeticError):
     pass
@@ -20,14 +21,30 @@ def multiplicative_inverse(r, n):
     if r*a % n != 1:
         raise ModularInverseError('%s has no inverse modulo %s' % (r,n))
     return a % n
+
+class ModuloIntegerType(object):
+    def __init__(self, n):
+        self._n = n
+    def __call__(self, r):
+        return ModuloInteger(r, self._n)
+    def __unicode__(self):
+        return 'Z'+unicode_rendering.subscript(self._n)
+    def __str__(self):
+        return unicode(self).encode('utf-8')
+    def __repr__(self):
+        return 'ModuloIntegerType(%d)' % self._n
+
+class ModuloIntegerFactory(type):
+    def __getitem__(cls, index):
+        return ModuloIntegerType(index)
     
 class ModuloInteger(object):
+    __metaclass__ = ModuloIntegerFactory
+
     def __init__(self, r, n):
         '''Construct the integer r (mod n).'''
-        assert isinstances(r, numbers.Integral)
-        assert isinstances(n, numbers.Integral)
-        self._r = r % n
-        self._n = n
+        self._r = int(r) % int(n)
+        self._n = int(n)
 
     @property
     def r(self):
@@ -41,7 +58,7 @@ class ModuloInteger(object):
     def inverse(self):
         '''Return this object's multiplicative inverse, which is an
         integer s such that self*s = 1 (mod n).'''
-        return multiplicative_inverse(self._r, self._n)
+        return ModuloInteger(multiplicative_inverse(self._r, self._n), self._n)
 
     def __add__(self, rhs):
         return ModuloInteger(self._r + int(rhs), self._n)
@@ -80,6 +97,8 @@ class ModuloInteger(object):
         return int(self._r)
     def __long__(self):
         return long(self._r)
+    def __float__(self):
+        return float(self._r)
 
     def __cmp__(self, rhs):
         return cmp(self._r, int(rhs))
@@ -90,5 +109,29 @@ class ModuloInteger(object):
         return str(self._r)
     def __repr__(self):
         return '%s(%d,%d)' % (self.__class__.__name__, self._r, self._n)
+
+    #
+    # Implementation of numbers.Integral ABC
+    #
+
+    @property
+    def real(self):
+        return self._r
+
+    @property
+    def imag(self):
+        return 0
+
+    @property
+    def numerator(self):
+        return self._r
+
+    @property
+    def denominator(self):
+        return 1
+
+    def conjugate(self):
+        return self
+
 
 numbers.Integral.register(ModuloInteger)

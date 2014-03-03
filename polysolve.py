@@ -13,6 +13,7 @@ import math
 import numpy as np
 
 import ring
+import unicode_rendering
 
 inf = float('inf')
 
@@ -56,36 +57,6 @@ def divide_monomial(A, B):
 def multiply_monomial(A, B):
     '''Multiply the monomial A by the monomial B.'''
     return tuple(A[i] + B[i] for i in range(len(A)))
-
-def superscript_string(v):
-    '''Construct a unicode string containing v as superscript characters.'''
-    assert isinstance(v, numbers.Integral)
-    chars = []
-    if v < 0:
-        chars.append(unichr(0x207B))
-        v = -v
-    for digit in map(int, str(v)):
-        if digit == 1:
-            chars.append(unichr(0x00B9))
-        elif digit == 2:
-            chars.append(unichr(0x00B2))
-        elif digit == 3:
-            chars.append(unichr(0x00B3))
-        else:
-            chars.append(unichr(0x2070 + digit))
-    return ''.join(chars)
-
-def subscript_string(v):
-    '''Construct a unicode string containing v as superscript characters.'''
-    assert isinstance(v, numbers.Integral)
-    chars = []
-    if v < 0:
-        chars.append(unichr(0x208B))
-        v = -v
-    for digit in map(int, str(v)):
-        chars.append(unichr(0x2080 + digit))
-    return ''.join(chars)
-
 
 def as_polynomial(x, num_vars):
     '''Convert scalars, terms, or monomials to polynomials.'''
@@ -164,13 +135,8 @@ class DegreeOrdering(MonomialOrdering):
 
 class Term(object):
     def __init__(self, coef, monomial):
+        self.coef = coef
         self.monomial = monomial
-        if isinstance(coef, numbers.Integral):
-            self.coef = fractions.Fraction(coef)
-        elif isinstance(coef, numbers.Real):
-            self.coef = coef
-        else:
-            raise ValueError('Invalid coefficient: %s (type=%s)' % (coef, type(coef)))
 
     def __eq__(self, rhs):
         if not isinstance(rhs, Term):
@@ -255,14 +221,14 @@ class Term(object):
                 if len(self.monomial) <= 4:
                     var = 'xyzw'[var_index]
                 elif use_superscripts:
-                    var = 'x'+subscript_string(var_index+1)
+                    var = 'x'+unicode_rendering.subscript(var_index+1)
                 else:
                     var = 'x'+str(var_index+1)
 
                 if exponent == 1:
                     strings.append(var)
                 elif use_superscripts:
-                    strings.append(var + superscript_string(exponent))
+                    strings.append(var + unicode_rendering.superscript(exponent))
                 else:
                     strings.append(var + '^' + str(exponent))
 
@@ -313,11 +279,6 @@ class Polynomial(object):
     def zero(cls, num_vars):
         '''Create the constant polynomial p=0 over the specified number of variables.'''
         return Polynomial(num_vars)
-
-    @classmethod
-    def one(cls, num_vars):
-        '''Create the constant polynomial p=1 over the specified number of variables.'''
-        return Polynomial.create([Term(1,(0,)*num_vars)])
 
     def copy(self):
         '''Return a copy of this polynomial.'''
@@ -591,6 +552,12 @@ class Polynomial(object):
         '''Return true if this polynomial contains a non-zero term
         with the given monomial.'''
         return monomial in self._term_dict
+
+    def astype(self, ctype):
+        '''Return a copy of this polynomial in which each coefficient
+        is cast to the given type.'''
+        return Polynomial.create((Term(ctype(t.coef), t.monomial) for t in self),
+                                 self.num_vars)
 
     def evaluate_partial(self, var, value):
         '''Evaluate this polynomial given a variable index and a value
