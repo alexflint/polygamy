@@ -1,6 +1,7 @@
 from __future__ import division
 
 import exceptions
+import numbers
 
 import ring
 
@@ -14,16 +15,17 @@ def multiplicative_inverse(r, n):
     '''Find the multiplicative inverse of r in the field of integers
     modulo n, ie an integer s such that s<n and s*r = 1 (mod n).'''
     if r == 0:
-        raise InverseOfZeroError('attempted to compute inverse of zero')
+        raise InverseOfZeroError('cannot compute inverse of zero')
     gcd,a,b = ring.extended_gcd(r, n)
     if r*a % n != 1:
         raise ModularInverseError('%s has no inverse modulo %s' % (r,n))
     return a % n
     
-
 class ModuloInteger(object):
     def __init__(self, r, n):
         '''Construct the integer r (mod n).'''
+        assert isinstances(r, numbers.Integral)
+        assert isinstances(n, numbers.Integral)
         self._r = r % n
         self._n = n
 
@@ -50,6 +52,9 @@ class ModuloInteger(object):
         return ModuloInteger(self._r - int(rhs), self._n)
     def __rsub__(self, lhs):
         return ModuloInteger(int(lhs) - self._r, self._n)
+
+    def __neg__(self):
+        return ModuloInteger(self._n - self._r, self._n)
 
     def __mul__(self, rhs):
         return ModuloInteger(self._r * int(rhs), self._n)
@@ -85,3 +90,5 @@ class ModuloInteger(object):
         return str(self._r)
     def __repr__(self):
         return '%s(%d,%d)' % (self.__class__.__name__, self._r, self._n)
+
+numbers.Integral.register(ModuloInteger)
