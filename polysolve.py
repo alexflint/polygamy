@@ -58,17 +58,17 @@ def multiply_monomial(A, B):
     '''Multiply the monomial A by the monomial B.'''
     return tuple(A[i] + B[i] for i in range(len(A)))
 
-def as_polynomial(x, num_vars):
+def as_polynomial(x, num_vars, ctype=None):
     '''Convert scalars, terms, or monomials to polynomials.'''
     if isinstance(x, numbers.Real):
         # Interpret scalars as constant polynomials
-        return Polynomial.create([Term(x, (0,)*num_vars)])
+        return Polynomial.create([Term(x, (0,)*num_vars)], num_vars, ctype)
     elif isinstance(x, tuple):
         # Interpret tuples as monomials
-        return Polynomial.create([Term(1, x)])
+        return Polynomial.create([Term(1, x)], num_vars, ctype)
     elif isinstance(x, Term):
         # Interpret terms as length-1 polynomials
-        return Polynomial.create([x])
+        return Polynomial.create([x], num_vars, ctype)
     elif isinstance(x, Polynomial):
         return x
     else:
@@ -169,8 +169,7 @@ class Term(object):
             return Term(self.coef, self.monomial, ctype)
 
     def __eq__(self, rhs):
-        if not isinstance(rhs, Term):
-            return False
+        rhs = as_term(rhs, len(self.monomial))
         return self.coef == rhs.coef and self.monomial == rhs.monomial
 
     def __ne__(self, rhs):
@@ -196,17 +195,24 @@ class Term(object):
         self.coef = -self.coef
 
     def __mul__(self, rhs):
+        rhs = as_term(rhs, len(self.monomial))
         result = self.copy()
         result._multiply_by(rhs)
         return result
 
     def __truediv__(self, rhs):
+        rhs = as_term(rhs, len(self.monomial))
         result = self.copy()
         result._divide_by(rhs)
         return result
 
     def __neg__(self):
         return Term(-self.coef, self.monomial, self.ctype)
+
+    def __call__(self, *x):
+        '''Evaluate this term at x.'''
+        assert len(x) == len(self.monomial)
+        return self.coef * product(xi**ai for xi,ai in zip(x,self.monomial))
 
     def evaluate_partial(self, var_index, value):
         '''Create a new term with by evaluating this term at the given
@@ -216,11 +222,6 @@ class Term(object):
         return Term(self.coef * value**self.monomial[var_index],
                     tuple(0 if i==var_index else a for i,a in enumerate(self.monomial)),
                     self.ctype)
-
-    def __call__(self, *x):
-        '''Evaluate this term at x.'''
-        assert len(x) == len(self.monomial)
-        return float(self.coef) * product(xi**ai for xi,ai in zip(x,self.monomial))
 
     def divides(self, rhs):
         return can_divide_monomial(rhs.monomial, self.monomial)
@@ -361,7 +362,7 @@ class Polynomial(object):
     def trailing_terms(self, ordering=None):
         '''Return a polynomial consisting of all terms in this
         polynomial other than the leading term.'''
-        return Polynomial.create(self.sorted_terms(ordering)[:-1], self.num_vars)
+        return Polynomial.create(self.sorted_terms(ordering)[:-1], self.num_vars, self.ctype)
 
     def divides(self, rhs, ordering=None):
         return any([ self.leading_term(ordering).divides(term) for term in rhs ])
@@ -415,7 +416,8 @@ class Polynomial(object):
                  for i in range(self.num_vars) ]
         result = Polynomial(sum(mask), self.ctype)
         for term in self:
-            result._add_term(Term(term.coef, tuple(v for i,v in enumerate(term.monomial) if mask[i])))
+            squeezed_monomial = tuple(v for i,v in enumerate(term.monomial) if mask[i])
+            result[squeezed_monomial] += term.coef
         return result
 
     def normalized(self, ordering=None):
@@ -424,9 +426,10 @@ class Polynomial(object):
             return Polynomial(self.num_vars, self.ctype)  # return a copy, not a reference
         else:
             lt = self.leading_term(ordering)
-            p = Polynomial.create([Term(1, lt.monomial)], self.num_vars, self.ctype)
-            p._add_terms([ term/lt.coef for term in self if term is not lt ])
-            return p
+            result = Polynomial(self.num_vars, self.ctype)
+            result[lt.monomial] = 1
+            result._add_terms(term/lt.coef for term in self if term is not lt)
+            return result
 
     def _resolve_ordering(self, ordering=None):
         '''If ordering is None and this is a univariate polynomial
@@ -506,7 +509,7 @@ class Polynomial(object):
         elif rhs < 0:
             raise TypeError('cannot raise a polynomial to a negative power.')
 
-        result = Polynomial(self.num_vars)
+        result = Polynomial(self.num_vars, self.ctype)
         for terms in itertools.product(self, repeat=rhs):
             result._add_term(product(terms))
         return result
@@ -613,7 +616,8 @@ class Polynomial(object):
         new polynomial in the same number of variables, although the
         evaluated variable will not appear in any term.'''
         return Polynomial.create((term.evaluate_partial(var,value) for term in self),
-                                 self.num_vars)
+                                 self.num_vars,
+                                 self.ctype)
 
     def sign_at_infinity(self):
         '''Compute the limiting value of this polynomial as x tends to
@@ -690,14 +694,10 @@ class Polynomial(object):
 def map_coefficients(f, polynomial):
     '''Return a new polynomial formed by replacing each coefficient in
     the given polynomial with f(coefficient).'''
-    return Polynomial.create((Term(f(t.coef), t.monomial) for t in polynomial),
-                             polynomial.num_vars,
-                             polynomial.ctype)
-
-def modulo_coefficients(polynomial, n):
-    '''Return a new polynomial in which each cofficient in the given
-    polynomial is an element of Z/nZ, the integers modulo n.'''
-    return map_coefficients(lambda r: ModuloInteger(r,n), polynomial)
+    result = Polynomial.create(polynomial.num_vars, polynomial.ctype)
+    for term in polynomial:
+        result[term.monomial] = f(term.coef)
+    return result
 
 #
 # Operations for systems of equations
@@ -953,9 +953,11 @@ def parse(*exprs, **kwargs):
         assert symbols.issubset(variable_order), 'variable_order contained the wrong symbols'
 
     # Construct polynomials corresponding to each variable
-    n = len(variable_order)
-    variables = { var : as_polynomial(tuple(int(x==i) for x in range(n)), n)
-                  for i,var in enumerate(variable_order) }
+    ctype = kwargs.get('ctype', None)
+    variables = { }
+    for i,var in enumerate(variable_order):
+        monomial = tuple(int(x==i) for x in range(len(variable_order)))
+        variables[var] = Polynomial.create([Term(1,monomial)], len(variable_order), ctype)
 
     # Evaluate
     polynomials = tuple(eval(expr, variables) for expr in exprs)
@@ -965,12 +967,3 @@ def parse(*exprs, **kwargs):
         return polynomials[0]
     else:
         return polynomials
-
-#
-# Debugging and visualization
-#
-def show_division(a, b):
-    if isinstance(a, basestring):
-        a,b = parse(a,b)
-    q,r = a.divide_by(b)
-    print '[%s] = (%s) * [%s] + (%s)' % (a, q, b, r)

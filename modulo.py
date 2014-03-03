@@ -33,6 +33,10 @@ class ModuloIntegerType(object):
         return unicode(self).encode('utf-8')
     def __repr__(self):
         return 'ModuloIntegerType(%d)' % self._n
+    def __eq__(self, rhs):
+        return isinstance(rhs, ModuloIntegerType) and self._n == rhs._n
+    def __ne__(self, rhs):
+        return not (self == rhs)
 
 class ModuloIntegerFactory(type):
     def __getitem__(cls, index):

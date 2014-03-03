@@ -54,6 +54,16 @@ class PolynomialTest(unittest.TestCase):
         self.assertEqual(first(g).ctype, long)
         self.assertEqual(first(f).ctype, float)
 
+    def test_astype_modulo(self):
+        f = parse('2*x**2 + 7*x + 1').astype(ModuloInteger[37])
+        g = parse('2*x - 1').astype(ModuloInteger[37])
+        h1 = f ** 5
+        self.assertEqual(h1.ctype, ModuloInteger[37])
+        h2 = f // g
+        self.assertEqual(h2.ctype, ModuloInteger[37])
+        h3 = f % g
+        self.assertEqual(h3.ctype, ModuloInteger[37])
+
     def test_getitem(self):
         f = parse('2*x + 11*x*y**2 - 1')
         self.assertEqual(f[1,0], 2)
@@ -152,7 +162,8 @@ class PolynomialTest(unittest.TestCase):
         print 'Time to compile: ',timeit.timeit(lambda:f.compile(), number=10000)/10000
 
     def test_sturm(self):
-        s = SturmChain(parse('(x-0.5)*(x-1.5)*(x-2.5)*(x-3.5)'))
+        p = parse('(x-0.5)*(x-1.5)*(x-2.5)*(x-3.5)', ctype=float)
+        s = SturmChain(p)
         self.assertEqual(s.count_roots(), 4)
         self.assertEqual(s.count_roots_between(0, 10), 4)
         self.assertEqual(s.count_roots_between(0, 0), 0)
@@ -168,19 +179,19 @@ class PolynomialTest(unittest.TestCase):
         self.assertEqual(s.count_roots_between(-1e+15, 1e+15), 4)
 
     def test_sturm_with_multiple_roots(self):
-        s = SturmChain(parse('(x-1)**2'))
+        s = SturmChain(parse('(x-1)**2').astype(float))
         self.assertEqual(s.count_roots(), 1)
         self.assertEqual(s.count_roots_between(0, 10), 1)
 
-        s = SturmChain(parse('(x-1)**3'))
+        s = SturmChain(parse('(x-1)**3').astype(float))
         self.assertEqual(s.count_roots(), 1)
         self.assertEqual(s.count_roots_between(0, 10), 1)
 
-        s = SturmChain(parse('(x-1)**3 * (x-2)'))
+        s = SturmChain(parse('(x-1)**3 * (x-2)').astype(float))
         self.assertEqual(s.count_roots(), 2)
         self.assertEqual(s.count_roots_between(0, 10), 2)
 
-        s = SturmChain(parse('(x-1)**3 * (x-2)**5'))
+        s = SturmChain(parse('(x-1)**3 * (x-2)**5').astype(float))
         self.assertEqual(s.count_roots(), 2)
         self.assertEqual(s.count_roots_between(0, 10), 2)
 
