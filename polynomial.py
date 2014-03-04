@@ -66,7 +66,7 @@ def as_polynomial(x, num_vars, ctype=None):
     elif isinstance(x, Polynomial):
         return x
     else:
-        raise TypeError('Cannot convert %s to polynomial' % type(x))
+        raise TypeError('cannot convert %s to polynomial' % type(x))
 
 def as_term(x, num_vars):
     '''Convert scalars, terms, or monomials to polynomials.'''
@@ -80,7 +80,7 @@ def as_term(x, num_vars):
         # Interpret terms as length-1 polynomials
         return x
     else:
-        raise TypeError('Cannot convert %s to polynomial' % type(x))
+        raise TypeError('cannot convert %s to term (%d)' % (type(x), isinstance(x,Term)))
 
 class DivisionError(Exception):
     pass
@@ -218,6 +218,7 @@ class Term(object):
                     self.ctype)
 
     def divides(self, rhs):
+        rhs = as_term(rhs, len(self.monomial))
         return can_divide_monomial(rhs.monomial, self.monomial)
 
     @property
@@ -747,19 +748,31 @@ def lcm(A, B):
     assert len(A) == len(B)
     return tuple(max(A[i],B[i]) for i in range(len(A)))
 
-def s_poly(f, g, ordering=None):
-    f = as_polynomial(f)
-    g = as_polynomial(g)
+def s_poly(f, g, ordering):
+    assert f.num_vars == g.num_vars
     ltf = f.leading_term(ordering)
     ltg = g.leading_term(ordering)
     common = Term(1, lcm(ltf.monomial, ltg.monomial))
-    return as_polynomial(common/ltf) * f + as_polynomial(common/ltg) * g
+    return as_polynomial(common/ltf, f.num_vars) * f + as_polynomial(common/ltg, f.num_vars) * g
 
-def gbasis(F):
-    pass
+def gbasis(F, ordering):
+    # Initialize the grobner basis to a copy of F
+    G = [ f.copy() for f in F ]
 
+    # Keep adding s-polynomials
+    updated = True
+    while updated:
+        updated = False
+        for fi,fj in itertools.combinations(F, 2):
+            s = s_poly(fi, fj, ordering)
+            r = remainder(s, F, ordering)
+            if r != 0:
+                G.append(r)
+                update = True
+                break
 
-
+    # Now we have a basis
+    return G
 
 
 #
