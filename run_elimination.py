@@ -1,7 +1,7 @@
 import itertools
 import numpy as np
 
-from polysolve import *
+from polynomial import *
 
 # the root is at (x=1 y=2 z=3) and (x=10 y=20 z=30)
 

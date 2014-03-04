@@ -1,7 +1,7 @@
 import numpy as np
 import scipy.linalg
 
-from polysolve import *
+from polynomial import *
 
 F = parse('x**2 + y**2 - 1', 'x-y')
 Ls = [ [], [(1,0), (0,1)] ]
