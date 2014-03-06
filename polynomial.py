@@ -14,6 +14,21 @@ import unicode_rendering
 class OrderingError(Exception):
     pass
 
+def type_rank(t):
+    if not isinstance(t, type):
+        return 4
+    if issubclass(t, numbers.Integral):
+        return 1
+    elif issubclass(t, numbers.Rational):
+        return 2
+    elif issubclass(t, numbers.Real):
+        return 3
+    else:
+        return 4
+
+def result_type(*types):
+    return max(types, key=lambda x: type_rank(x))
+
 def product(xs):
     '''Compute the product of the elements of XS.'''
     return reduce(operator.mul, xs)
@@ -247,9 +262,9 @@ class Term(object):
                 if len(self.monomial) <= 4:
                     var = 'xyzw'[var_index]
                 elif use_superscripts:
-                    var = 'x'+unicode_rendering.subscript(var_index+1)
+                    var = 'x'+unicode_rendering.subscript(var_index)
                 else:
-                    var = 'x'+str(var_index+1)
+                    var = 'x'+str(var_index)
 
                 if exponent == 1:
                     strings.append(var)
@@ -271,6 +286,7 @@ class Term(object):
     def __repr__(self):
         return str(self)
 
+
 class ComparableTerm(object):
     @classmethod
     def factory(cls, ordering):
@@ -282,6 +298,7 @@ class ComparableTerm(object):
         self._term = term
     def __cmp__(self, rhs):
         return self._ordering(self._term.monomial, rhs._term.monomial)
+
 
 class Polynomial(object):
     def __init__(self, num_vars, ctype=None):
@@ -306,6 +323,12 @@ class Polynomial(object):
         p._add_terms(terms)
         return p
 
+    @classmethod
+    def coordinate(cls, var_index, num_vars, ctype=None):
+        """Construct a polynomial corresponding to the i-th variable."""
+        print '\nin coordinate...'
+        return Polynomial.create([Term(1, tuple(i==var_index for i in range(num_vars)))], num_vars, ctype)
+
     @property
     def num_vars(self):
         '''Return the number of variables in the polynomial ring in
@@ -324,11 +347,15 @@ class Polynomial(object):
         else:
             return max(term.total_degree for term in self)
 
-    def copy(self):
+    @property
+    def monomials(self):
+        return self._term_dict.viewkeys()
+
+    def copy(self, ctype=None):
         '''Return a copy of this polynomial.'''
         return Polynomial.create((term.copy() for term in self),
                                  self.num_vars,
-                                 self.ctype)
+                                 ctype or self.ctype)
 
     def astype(self, ctype):
         '''Return a copy of this polynomial in which each coefficient
@@ -368,7 +395,9 @@ class Polynomial(object):
     def divide_by(self, rhs, ordering=None):
         rhs = as_polynomial(rhs, self.num_vars)
         if rhs == 0:
-            raise DivisionError('Cannot divide by zero')
+            raise DivisionError('cannot divide by zero')
+        if self.ctype == int or rhs.ctype == int:
+            print 'Warning: polynomial division with integer coefs will lead to unexpected round-off'
 
         lt_rhs = rhs.leading_term(ordering)
         tt_rhs = rhs.trailing_terms(ordering)
@@ -386,7 +415,7 @@ class Polynomial(object):
             else:
                 remainder._add_term(lt_dividend)
 
-        return quotient,remainder
+        return quotient, remainder
 
     def partial_derivative(self, var_index):
         '''Return a polynomial representing the partial derivative of
@@ -475,7 +504,7 @@ class Polynomial(object):
 
     def __add__(self, rhs):
         rhs = as_polynomial(rhs, self.num_vars)
-        result = self.copy()
+        result = self.copy(result_type(self.ctype, rhs.ctype))
         result._add_terms(rhs)
         return result
 
@@ -486,14 +515,14 @@ class Polynomial(object):
 
     def __sub__(self, rhs):
         rhs = as_polynomial(rhs, self.num_vars)
-        result = rhs.copy()
+        result = rhs.copy(result_type(self.ctype, rhs.ctype))
         result._negate_terms()
         result._add_terms(self)
         return result
 
     def __mul__(self, rhs):
         rhs = as_polynomial(rhs, self.num_vars)
-        result = Polynomial(self.num_vars, self.ctype)
+        result = Polynomial(self.num_vars, result_type(self.ctype, rhs.ctype))
         for lterm,rterm in itertools.product(self, rhs):
             result._add_term(lterm*rterm)
         return result
@@ -732,6 +761,8 @@ def matrix_form(F, ordering=None):
         monomials = sorted(monomials, key=lambda monomial: ComparableTerm(ordering, Term(1,monomial)))
     elif ordering is not None:
         monomials = ordering
+    else:
+        monomials = list(set(*(f.monomials for f in F)))
     X = [ as_polynomial(monomial, F[0].num_vars) for monomial in monomials ]
     C = np.asarray([[ f[monomial] for monomial in monomials ] for f in F])
     return C,X

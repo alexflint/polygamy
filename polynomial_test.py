@@ -62,6 +62,34 @@ class PolynomialTest(unittest.TestCase):
         h3 = f % g
         self.assertEqual(h3.ctype, ModuloInteger[37])
 
+    def test_type_upgrade1(self):
+        f = parse('x').astype(int)
+        g = parse('x').astype(float)
+        self.assertEqual((f+g).ctype, float)
+        self.assertEqual((f-g).ctype, float)
+        self.assertEqual((f*g).ctype, float)
+
+    def test_type_upgrade2(self):
+        f = parse('x').astype(fractions.Fraction)
+        g = parse('x').astype(fractions.Fraction)
+        self.assertEqual((f+g).ctype, fractions.Fraction)
+        self.assertEqual((f-g).ctype, fractions.Fraction)
+        self.assertEqual((f*g).ctype, fractions.Fraction)
+
+    def test_type_upgrade3(self):
+        f = parse('x').astype(int)
+        g = parse('x').astype(fractions.Fraction)
+        self.assertEqual((f+g).ctype, fractions.Fraction)
+        self.assertEqual((f-g).ctype, fractions.Fraction)
+        self.assertEqual((f*g).ctype, fractions.Fraction)
+
+    def test_type_upgrade4(self):
+        f = parse('x').astype(fractions.Fraction)
+        g = parse('x').astype(float)
+        self.assertEqual((f+g).ctype, float)
+        self.assertEqual((f-g).ctype, float)
+        self.assertEqual((f*g).ctype, float)
+
     def test_getitem(self):
         f = parse('2*x + 11*x*y**2 - 1')
         self.assertEqual(f[1,0], 2)
