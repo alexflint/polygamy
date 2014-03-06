@@ -1,6 +1,9 @@
-def gcd(f, g):
+
+import operator
+
+def gcd(f, g, mod=operator.mod):
     while g != 0:
-        f, g = g, f % g
+        f, g = g, mod(f, g)
     return f
 
 def extended_gcd(f, g):
