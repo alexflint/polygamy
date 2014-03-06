@@ -326,7 +326,6 @@ class Polynomial(object):
     @classmethod
     def coordinate(cls, var_index, num_vars, ctype=None):
         """Construct a polynomial corresponding to the i-th variable."""
-        print '\nin coordinate...'
         return Polynomial.create([Term(1, tuple(i==var_index for i in range(num_vars)))], num_vars, ctype)
 
     @property
