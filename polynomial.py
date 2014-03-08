@@ -8,7 +8,6 @@ import ast
 import operator
 import numpy as np
 
-import ring
 import unicode_rendering
 
 class OrderingError(Exception):
@@ -30,7 +29,7 @@ def result_type(*types):
     return max(types, key=lambda x: type_rank(x))
 
 def product(xs):
-    '''Compute the product of the elements of XS.'''
+    """Compute the product of the elements of XS."""
     return reduce(operator.mul, xs)
 
 def compare_leftmost(A, B):
@@ -52,7 +51,7 @@ def compare_rightmost(A, B):
     return 0
 
 def can_divide_monomial(A, B):
-    '''True if B divides A.'''
+    """True if B divides A."""
     assert len(A) == len(B)
     for i in range(len(A)):
         if B[i] > A[i]:
@@ -60,15 +59,40 @@ def can_divide_monomial(A, B):
     return True
 
 def divide_monomial(A, B):
-    '''Divide the monomial A by the monomial B.'''
+    """Divide the monomial A by the monomial B."""
     return tuple(A[i] - B[i] for i in range(len(A)))
 
 def multiply_monomial(A, B):
-    '''Multiply the monomial A by the monomial B.'''
+    """Multiply the monomial A by the monomial B."""
     return tuple(A[i] + B[i] for i in range(len(A)))
 
+def as_monomial(x):
+    """Convert scalars, terms, or monomials to polynomials."""
+    if isinstance(x, Monomial):
+        # Interpret scalars as constant polynomials
+        return x
+    else:
+        try:
+            return Monomial(*x)
+        except TypeError:
+            raise TypeError('cannot convert %s to monomial' % type(x))
+
+def as_term(x, num_vars):
+    """Convert scalars, terms, or monomials to polynomials."""
+    if isinstance(x, numbers.Real):
+        # Interpret scalars as constant polynomials
+        return Term(x, (0,)*num_vars)
+    elif isinstance(x, tuple):
+        # Interpret tuples as monomials
+        return Term(1, x)
+    elif isinstance(x, Term):
+        # Interpret terms as length-1 polynomials
+        return x
+    else:
+        raise TypeError('cannot convert %s to term' % type(x))
+
 def as_polynomial(x, num_vars, ctype=None):
-    '''Convert scalars, terms, or monomials to polynomials.'''
+    """Convert scalars, terms, or monomials to polynomials."""
     if isinstance(x, numbers.Real):
         # Interpret scalars as constant polynomials
         return Polynomial.create([Term(x, (0,)*num_vars)], num_vars, ctype)
@@ -83,25 +107,11 @@ def as_polynomial(x, num_vars, ctype=None):
     else:
         raise TypeError('cannot convert %s to polynomial' % type(x))
 
-def as_term(x, num_vars):
-    '''Convert scalars, terms, or monomials to polynomials.'''
-    if isinstance(x, numbers.Real):
-        # Interpret scalars as constant polynomials
-        return Term(x, (0,)*num_vars)
-    elif isinstance(x, tuple):
-        # Interpret tuples as monomials
-        return Term(1, x)
-    elif isinstance(x, Term):
-        # Interpret terms as length-1 polynomials
-        return x
-    else:
-        raise TypeError('cannot convert %s to term (%d)' % (type(x), isinstance(x,Term)))
-
 class DivisionError(Exception):
     pass
 
 class MonomialOrdering(object):
-    '''Represents an ordering over n-tuples of integers.'''
+    """Represents an ordering over n-tuples of integers."""
     __metaclass__ = abc.ABCMeta
     @abc.abstractmethod
     def __call__(self, a, b):
@@ -109,12 +119,12 @@ class MonomialOrdering(object):
         pass
 
 class LexOrdering(MonomialOrdering):
-    '''Implements "lex" monomial ordering.'''
+    """Implements "lex" monomial ordering."""
     def __call__(self, a, b):
         return compare_leftmost(a, b)
 
 class GrlexOrdering(MonomialOrdering):
-    '''Implements "grlex" monomial ordering.'''
+    """Implements "grlex" monomial ordering."""
     def __call__(self, a, b):
         if sum(a) > sum(b):
             return 1
@@ -124,7 +134,7 @@ class GrlexOrdering(MonomialOrdering):
             return compare_leftmost(a, b)
 
 class GrevlexOrdering(MonomialOrdering):
-    '''Implements "grevlex" monomial ordering.'''
+    """Implements "grevlex" monomial ordering."""
     def __call__(self, a, b):
         if sum(a) > sum(b):
             return 1
@@ -134,15 +144,138 @@ class GrevlexOrdering(MonomialOrdering):
             return compare_rightmost(b, a)  # yes this is (b,a) not (a,b)
 
 class DegreeOrdering(MonomialOrdering):
-    '''Orders univariate monomials by their degree. This is not a true
+    """Orders univariate monomials by their degree. This is not a true
     monomial ordering because it is only valid for univariate
-    monomials.'''
+    monomials."""
     def __call__(self, a, b):
         assert len(a) == 1
         assert len(b) == 1
         return cmp(a[0], b[0])
 
+# TODO problems to solve:
+#   the need to keep passing around ordering objects
+#   class to represent polynomial systems
+#   the need to keep managing num_vars
+#   inability to construct polynomials with different vars independently
+
+
+class Monomial(object):
+    """Represents a multivariate monomial of the form
+    x1^a1 * ... * xn^an."""
+
+    def __init__(self, *exponents):
+        """Initializes a monomial with the given exponent vector."""
+        if not all(isinstance(a, numbers.Integral) for a in exponents):
+            raise TypeError('monomial exponents must be integers')
+        if not all(a >= 0 for a in exponents):
+            raise TypeError('monomial exponents must be non-negative')
+        self._exponents = tuple(exponents)
+
+    @property
+    def exponents(self):
+        return self._exponents
+
+    @property
+    def total_degree(self):
+        """Return the sum of the exponents in this term."""
+        return sum(self)
+
+    def __eq__(self, rhs):
+        rhs = as_monomial(rhs)
+        return self.exponents == rhs.exponents
+
+    def __ne__(self, rhs):
+        return not (self == rhs)
+
+    def __hash__(self):
+        """Returns the hash code for the underlying exponent tuple."""
+        return hash(self.exponents)
+
+    def __iter__(self):
+        return iter(self.exponents)
+
+    def __len__(self):
+        return len(self.exponents)
+
+    def __getitem__(self, index):
+        return self.exponents[index]
+
+    def __mul__(self, rhs):
+        rhs = as_monomial(rhs)
+        return Monomial(*(a+b for a, b in zip(self, rhs)))
+
+    def __rmul__(self, rhs):
+        return as_monomial(rhs) * self
+
+    def __truediv__(self, rhs):
+        rhs = as_monomial(rhs)
+        assert rhs.divides(self)
+        return Monomial(*(a-b for a, b in zip(self, rhs)))
+
+    def __rtruediv__(self, rhs):
+        return as_monomial(rhs) / self
+
+    def __call__(self, *xs):
+        """Evaluate this monomial at x."""
+        assert len(xs) == len(self)
+        return product(x**a for x, a in zip(x, self))
+
+    def divides(self, rhs):
+        """Return true if each exponent in this term is greater or
+        equal than the corresponding term in rhs."""
+        rhs = as_term(rhs)
+        assert len(rhs) == len(self)
+        return all(a <= b for a, b in zip(self, rhs))
+
+    def copy(self):
+        """Return a copy of this term."""
+        return Term(self.coef, self.monomial, self.ctype)
+
+    def python_expression(self, varnames):
+        """Construct a python expression string representing this polynomial."""
+        assert len(varnames) == len(self)
+        return '*'.join(['%s**%d' % (var, a)
+                         for var, a in zip(varnames, self)
+                         if a > 0])
+
+    def format(self, use_superscripts=True):
+        """Construct a string representation of this polynomial."""
+        strings = []
+        for var_index, exponent in enumerate(self):
+            if exponent >= 1:
+                if len(self) <= 4:
+                    var = 'xyzw'[var_index]
+                elif use_superscripts:
+                    var = 'x'+unicode_rendering.subscript(var_index)
+                else:
+                    var = 'x'+str(var_index)
+
+                if exponent == 1:
+                    strings.append(var)
+                elif use_superscripts:
+                    strings.append(var + unicode_rendering.superscript(exponent))
+                else:
+                    strings.append(var + '^' + str(exponent))
+
+        if use_superscripts:
+            return ''.join(strings)
+        else:
+            return '*'.join(strings)
+
+    def __unicode__(self):
+        return self.format()
+
+    def __str__(self):
+        return unicode(self).encode('utf-8')
+
+    def __repr__(self):
+        return str(self)
+
+
 class Term(object):
+    """Represents a multivariate polynomial term of the form
+    c * x1^a1 * ... * xn^an."""
+
     def __init__(self, coef, monomial, ctype=None):
         self._monomial = monomial
         if ctype is None:
@@ -169,9 +302,9 @@ class Term(object):
         return self._ctype
 
     def astype(self, ctype):
-        '''If ctype == self.ctype then return a reference to this
+        """If ctype == self.ctype then return a reference to this
         object, otherwise return a copy of this term converted to the
-        given type.'''
+        given type."""
         if ctype == self.ctype:
             return self
         else:
@@ -219,15 +352,15 @@ class Term(object):
         return Term(-self.coef, self.monomial, self.ctype)
 
     def __call__(self, *x):
-        '''Evaluate this term at x.'''
+        """Evaluate this term at x."""
         assert len(x) == len(self.monomial)
         return self.coef * product(xi**ai for xi,ai in zip(x,self.monomial))
 
     def evaluate_partial(self, var_index, value):
-        '''Create a new term with by evaluating this term at the given
+        """Create a new term with by evaluating this term at the given
         value for the given variable. The result formally contains the
         same number of variables but the evaluated variable always has
-        an exponent of zero.'''
+        an exponent of zero."""
         return Term(self.coef * value**self.monomial[var_index],
                     tuple(0 if i==var_index else a for i,a in enumerate(self.monomial)),
                     self.ctype)
@@ -238,22 +371,22 @@ class Term(object):
 
     @property
     def total_degree(self):
-        '''Return the sum of the exponents in this term.'''
+        """Return the sum of the exponents in this term."""
         return sum(self.monomial)
 
     def copy(self):
-        '''Return a copy of this term.'''
+        """Return a copy of this term."""
         return Term(self.coef, self.monomial, self.ctype)
 
     def python_expression(self, varnames):
-        '''Construct a python expression string representing this polynomial.'''
+        """Construct a python expression string representing this polynomial."""
         assert len(varnames) == len(self.monomial)
         return '*'.join([str(self.coef)] + ['%s**%d' % (var,exponent)
                                             for var,exponent in zip(varnames,self.monomial)
                                             if exponent>0])
 
     def format(self, use_superscripts=True):
-        '''Construct a string representation of this polynomial.'''
+        """Construct a string representation of this polynomial."""
         strings = []
         if self.coef != 1 or self.total_degree == 0:
             strings.append(str(self.coef))
@@ -330,8 +463,8 @@ class Polynomial(object):
 
     @property
     def num_vars(self):
-        '''Return the number of variables in the polynomial ring in
-        which this polynomial resides.'''
+        """Return the number of variables in the polynomial ring in
+        which this polynomial resides."""
         return self._num_vars
 
     @property
@@ -340,7 +473,7 @@ class Polynomial(object):
 
     @property
     def total_degree(self):
-        '''Return the sum of the exponents of the highest-degree term in this polynomial.'''
+        """Return the sum of the exponents of the highest-degree term in this polynomial."""
         if len(self) == 0:
             return 0
         else:
@@ -351,14 +484,14 @@ class Polynomial(object):
         return self._term_dict.viewkeys()
 
     def copy(self, ctype=None):
-        '''Return a copy of this polynomial.'''
+        """Return a copy of this polynomial."""
         return Polynomial.create((term.copy() for term in self),
                                  self.num_vars,
                                  ctype or self.ctype)
 
     def astype(self, ctype):
-        '''Return a copy of this polynomial in which each coefficient
-        is cast to the given type.'''
+        """Return a copy of this polynomial in which each coefficient
+        is cast to the given type."""
         if ctype == self.ctype:
             return self
         else:
@@ -367,22 +500,22 @@ class Polynomial(object):
                                      ctype)
 
     def sorted_terms(self, ordering=None, reverse=False):
-        '''Return a collection of Term objects representing terms in
+        """Return a collection of Term objects representing terms in
         this polynomial, sorted by the given ordering (lowest ordered
-        term first).'''
+        term first)."""
         return sorted(self,
                       key=ComparableTerm.factory(self._resolve_ordering(ordering)),
                       reverse=reverse)
 
     def leading_term(self, ordering=None):
-        '''Return a Term object representing the term in this
-        polynomial that is sorted first by the given ordering.'''
+        """Return a Term object representing the term in this
+        polynomial that is sorted first by the given ordering."""
         return max(self,
                    key=ComparableTerm.factory(self._resolve_ordering(ordering)))
 
     def trailing_terms(self, ordering=None):
-        '''Return a polynomial consisting of all terms in this
-        polynomial other than the leading term.'''
+        """Return a polynomial consisting of all terms in this
+        polynomial other than the leading term."""
         return Polynomial.create(self.sorted_terms(ordering)[:-1], self.num_vars, self.ctype)
 
     def divides(self, rhs, ordering=None):
@@ -417,8 +550,8 @@ class Polynomial(object):
         return quotient, remainder
 
     def partial_derivative(self, var_index):
-        '''Return a polynomial representing the partial derivative of
-        this polynomial with respect to the its i-th variable.'''
+        """Return a polynomial representing the partial derivative of
+        this polynomial with respect to the its i-th variable."""
         assert var_index >= 0
         assert var_index < self.num_vars
 
@@ -432,9 +565,9 @@ class Polynomial(object):
         return result
 
     def squeeze(self):
-        '''Return a new polynomial with a (possibly) smaller number of
+        """Return a new polynomial with a (possibly) smaller number of
         variables formed by eliminating variables that do not appear
-        in any term.'''
+        in any term."""
         mask = [ any(term.monomial[i]>0 for term in self)
                  for i in range(self.num_vars) ]
         result = Polynomial(sum(mask), self.ctype)
@@ -444,7 +577,7 @@ class Polynomial(object):
         return result
 
     def normalized(self, ordering=None):
-        '''Return a copy of this polynomial in which the leading coefficient is 1.'''
+        """Return a copy of this polynomial in which the leading coefficient is 1."""
         if len(self) == 0:
             return Polynomial(self.num_vars, self.ctype)  # return a copy, not a reference
         else:
@@ -455,10 +588,10 @@ class Polynomial(object):
             return result
 
     def _resolve_ordering(self, ordering=None):
-        '''If ordering is None and this is a univariate polynomial
+        """If ordering is None and this is a univariate polynomial
         then return a DegreeOrdering instance. Otherwise, check that
         it is a valid monomial ordering for this polynomial and return
-        it if so, or raise an exception if not.'''
+        it if so, or raise an exception if not."""
         if ordering is None:
             if self.num_vars == 1:
                 return DegreeOrdering()
@@ -538,9 +671,9 @@ class Polynomial(object):
         return result
 
     def __truediv__(self, rhs):
-        '''We only support division by a scalar. To perform polynomial
+        """We only support division by a scalar. To perform polynomial
         division, use f%g to compute the remainder, f//g to compute
-        the quotient, or divide_by() to compute both.'''
+        the quotient, or divide_by() to compute both."""
         assert isinstance(rhs, numbers.Rational), 'must use f%g or f//g for non-scalar division'
         return self * fractions.Fraction(1, rhs)
 
@@ -585,25 +718,25 @@ class Polynomial(object):
             return NotImplemented
 
     def __call__(self, *x):
-        '''Return this polynomial evaluated at x, which should be an
-        iterable of length num_vars.'''
+        """Return this polynomial evaluated at x, which should be an
+        iterable of length num_vars."""
         assert len(x) == self.num_vars
         return sum(term(*x) for term in self)
 
     def __len__(self):
-        '''Return the number of terms in this polynomial.'''
+        """Return the number of terms in this polynomial."""
         return len(self._term_dict)
 
     def __iter__(self):
-        '''Return an iterator over the terms in this polynomial, in an
+        """Return an iterator over the terms in this polynomial, in an
         arbitrary order. For predictable ordering, use
-        polynomial.sorted_terms(...).'''
+        polynomial.sorted_terms(...)."""
         return self._term_dict.itervalues()
 
     def __getitem__(self, monomial):
-        '''Get the coefficient of the given monomial in this
+        """Get the coefficient of the given monomial in this
         polynomial, or zero if this polynomial does not contain the
-        given monomial.'''
+        given monomial."""
         assert len(monomial) == self.num_vars
         term = self._term_dict.get(monomial, None)
         if term is None:
@@ -612,9 +745,9 @@ class Polynomial(object):
             return term.coef
 
     def __setitem__(self, monomial, coef):
-        '''Get the coefficient of the given monomial in this
+        """Get the coefficient of the given monomial in this
         polynomial, or zero if this polynomial does not contain the
-        given monomial.'''
+        given monomial."""
         assert len(monomial) == self.num_vars
         term = self._term_dict.get(monomial, None)
         if term is None:
@@ -629,22 +762,22 @@ class Polynomial(object):
         del self._term_dict[monomial]
 
     def __contains__(self, monomial):
-        '''Return true if this polynomial contains a non-zero term
-        with the given monomial.'''
+        """Return true if this polynomial contains a non-zero term
+        with the given monomial."""
         return monomial in self._term_dict
 
     def evaluate_partial(self, var, value):
-        '''Evaluate this polynomial given a variable index and a value
+        """Evaluate this polynomial given a variable index and a value
         for that variable.  The result of this operation is always a
         new polynomial in the same number of variables, although the
-        evaluated variable will not appear in any term.'''
+        evaluated variable will not appear in any term."""
         return Polynomial.create((term.evaluate_partial(var,value) for term in self),
                                  self.num_vars,
                                  self.ctype)
 
     def sign_at_infinity(self):
-        '''Compute the limiting value of this polynomial as x tends to
-        infinity.'''
+        """Compute the limiting value of this polynomial as x tends to
+        infinity."""
         assert self.num_vars == 1
         if len(self) == 0:
             return 0
@@ -652,8 +785,8 @@ class Polynomial(object):
             return cmp(self.leading_term().coef, 0)
 
     def sign_at_minus_infinity(self):
-        '''Compute the limiting value of this polynomial as x tends to
-        minus infinity.'''
+        """Compute the limiting value of this polynomial as x tends to
+        minus infinity."""
         assert self.num_vars == 1
         if len(self) == 0:
             return 0
@@ -662,8 +795,8 @@ class Polynomial(object):
             return cmp(lt.coef, 0) * (-1 if lt.monomial[0]%2 else 1)
 
     def compile(self):
-        '''Return a python function that can be used to evaluate this
-        polynomial quickly.'''
+        """Return a python function that can be used to evaluate this
+        polynomial quickly."""
         varnames = tuple('x'+str(i) for i in range(self.num_vars))
         expr = self.python_expression(varnames)
         source = 'def f(%s): return %s' % (','.join(varnames), expr)
@@ -673,8 +806,8 @@ class Polynomial(object):
         return namespace['f']
         
     def python_expression(self, varnames=None):
-        '''Construct a representation of this polynomial as a python
-        expression string.'''
+        """Construct a representation of this polynomial as a python
+        expression string."""
         if varnames is None:
             varnames = tuple('x'+str(i) for i in range(self.num_vars))
         if len(self) == 0:
@@ -683,7 +816,7 @@ class Polynomial(object):
             return ' + '.join(term.python_expression(varnames) for term in self)
 
     def format(self, ordering=GrevlexOrdering(), use_superscripts=True):
-        '''Construct a string representation of this polynomial.'''
+        """Construct a string representation of this polynomial."""
         if len(self) == 0:
             return '0'
         else:
@@ -715,8 +848,8 @@ class Polynomial(object):
 # Utilities
 #
 def map_coefficients(f, polynomial):
-    '''Return a new polynomial formed by replacing each coefficient in
-    the given polynomial with f(coefficient).'''
+    """Return a new polynomial formed by replacing each coefficient in
+    the given polynomial with f(coefficient)."""
     result = Polynomial.create(polynomial.num_vars, polynomial.ctype)
     for term in polynomial:
         result[term.monomial] = f(term.coef)
@@ -738,7 +871,7 @@ def polynomial_jacobian(polynomials):
 #
 
 def remainder(f, H, ordering=None):
-    '''Compute the remainder of f on division by <H1,...,Hn> (the ideal generated by H).'''
+    """Compute the remainder of f on division by <H1,...,Hn> (the ideal generated by H)."""
     quotients = [ Polynomial(h.num_vars, h.ctype) for h in H ]
     remainder = f.copy()
     i = 0
@@ -752,9 +885,9 @@ def remainder(f, H, ordering=None):
     return remainder
 
 def matrix_form(F, ordering=None):
-    '''Put the system of equations (f1=0,...,fn=0) into matrix form as
+    """Put the system of equations (f1=0,...,fn=0) into matrix form as
     C * X = 0, where C is a matrix of coefficients and X is a matrix
-    of monomials.'''
+    of monomials."""
     monomials = list(set(term.monomial for f in F for term in f))
     if isinstance(ordering, MonomialOrdering):
         monomials = sorted(monomials, key=lambda monomial: ComparableTerm(ordering, Term(1,monomial)))
@@ -766,6 +899,23 @@ def matrix_form(F, ordering=None):
     C = np.asarray([[ f[monomial] for monomial in monomials ] for f in F])
     return C,X
 
+
+#
+# Operations for ideals
+#
+def ideal_intersection(*Fs):
+    return [ f for F in Fs for f in F ]
+
+def ideal_union(*Fs):
+    return [ product(F) for F in itertools.product(*Fs) ]
+
+def ideal_from_zero(zero, ctype=None):
+    '''Construct an ideal that vanishes at the given zero.'''
+    return [ Polynomial.coordinate(i, len(zero), ctype) - zi for i, zi in enumerate(zero) ]
+
+def ideal_from_variety(zeros, ctype=None):
+    '''Construct an ideal from a finite variety.'''
+    return ideal_union(*(ideal_from_zero(zero, ctype) for zero in zeros))
 
 
 
