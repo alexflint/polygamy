@@ -34,5 +34,8 @@ nosetests.xml
 .project
 .pydevproject
 
-# python distutils
+# Python distutils
 MANIFEST
+
+# PyCharm
+.idea
