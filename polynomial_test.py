@@ -100,15 +100,15 @@ class PolynomialTest(unittest.TestCase):
 
     def test_getitem(self):
         f = parse('2*x + 11*x*y**2 - 1')
-        f[1,2] = 12
-        self.assertEqual(f[1,2], 12)
-        f[0,0] = 2
-        self.assertEqual(f[0,0], 2)
-        f[1,3] -= 4
-        self.assertEqual(f[1,3], -4)
-        f[0,0] -= 2
+        f.coefficients[1,2] = 12
+        self.assertEqual(f.coefficients[1,2], 12)
+        f.coefficients[0,0] = 2
+        self.assertEqual(f.coefficients[0,0], 2)
+        f.coefficients[1,3] -= 4
+        self.assertEqual(f.coefficients[1,3], -4)
+        f.coefficients[0,0] -= 2
         self.assertTrue((0,0) not in f)
-        self.assertEqual(f[0,0], 0)
+        self.assertEqual(f.coefficients[0,0], 0)
 
     def test_contains(self):
         f = parse('2*x + 11*x*y**2 - 1')
@@ -140,7 +140,7 @@ class PolynomialTest(unittest.TestCase):
     def test_squeeze(self):
         f = parse('2*x + 3*x**2 - 1', variable_order=('w','x','y'))
         g = parse('2*x + 3*x**2 - 1')
-        assert f.squeeze() == g
+        assert f.squeezed() == g
 
     def test_evaluate(self):
         f = parse('2*x + 3*x**2*y + 6*y**5 - 1')
@@ -170,8 +170,27 @@ class PolynomialTest(unittest.TestCase):
         self.assertEqual(ff(-1,0), -3)
         self.assertEqual(ff(0, 1.5), 44.5625)
 
+    def test_inside_numpy_array(self):
+        f, g, h = parse('x+y', '2*x**2', '4*x**4 + x**2 + 2*x*y + y**2')
+        v = np.array([f, g])
+        self.assertEqual(np.dot(v,v), h)
+        print f * np.eye(3)
+
+
+
+class IdealTest(unittest.TestCase):
+    def test_ideal_from_variety(self):
+        zeros = np.array([[-2, -1],
+                          [3,  2],
+                          [4,  5],
+                          [6,  7]], dtype=fractions.Fraction)
+        F = ideal_from_variety(zeros, fractions.Fraction)
+        for f in F:
+            self.assertNotEqual(f(10, 20), 0)
+            self.assertNotEqual(f(0, 0), 0)
+            for zero in zeros:
+                self.assertEqual(f(*zero), 0)
 
 
 if __name__ == '__main__':
     unittest.main()
-        
