@@ -7,49 +7,11 @@ import numpy as np
 
 import ring
 from polynomial import *
-
-
-class QuotientAlgebraError(Exception):
-    pass
-
-
-def monomials_not_divisible_by(monomials):
-    """Find all monomials not divisible by any monomial in M.
-    Raises QuotientAlgebraError if there are an infinite
-    number of such monomials."""
-    if len(monomials) == 0:
-        raise QuotientAlgebraError('list of leading monomials was empty')
-
-    # Find the univariate leading terms
-    rect = [None] * len(monomials[0])
-    for monomial in monomials:
-        active_vars = [ (i,a) for i,a in enumerate(monomial) if a>0 ]
-        if len(active_vars) == 1:
-            i,a = active_vars[0]
-            if rect[i] is None or rect[i] > a:
-                rect[i] = a
-
-    # Is the quotient algebra finite dimensional?
-    if any(ri is None for ri in rect):
-        raise QuotientAlgebraError('quotient algebra does not have a finite basis')
-
-    # Find monomials not divisble by the basis
-    output = []
-    for candidate in itertools.product(*map(range, rect)):
-        if not any(can_divide_monomial(candidate, m) for m in monomials):
-            output.append(candidate)
-    return output
-
-
-def quotient_algebra_basis(fs, ordering):
-    """Find the set of monomials not divisible by any leading term in fs."""
-    # Get the list of leading terms
-    leading_monomials = [ f.leading_term(ordering).monomial for f in fs ];
-    return monomials_not_divisible_by(leading_monomials)
+from action import *
 
 
 def dot(xs, ys, num_vars):
-    return sum(as_polynomial(x,num_vars) * as_polynomial(y,num_vars) for x,y in zip(xs,ys))
+    return sum(as_polynomial(x,num_vars) * as_polynomial(y,num_vars) for x, y in zip(xs,ys))
 
 
 def coefficients(polynomial, monomials):
@@ -65,32 +27,7 @@ def check_action_matrix(Mp, p, c, monomials, grobner_basis, ordering):
     the coefficient vector c and given basis monomials."""
     q1 = remainder(p * from_coefficients(c, monomials), grobner_basis, ordering)
     q2 = from_coefficients(np.dot(Mp, c), monomials)
-    success = q1 == q2
-    print 'q1:',q1
-    print 'q2:',q2
-    print 'equal?', success
-    return success
-
-
-def squarefree(f, var=0, ordering=GrevlexOrdering()):
-    f = f.astype(fractions.Fraction)
-    fp = f.partial_derivative(var)
-    def mod(a, b):
-        q, r = a.divide_by(b, ordering)
-        return r
-    q, r = f.divide_by(ring.gcd(f, fp, mod), ordering)
-    assert r == 0
-    return q
-
-
-class VariableReordering(MonomialOrdering):
-    def __init__(self, var_ordering, monomial_ordering):
-        self._vars = var_ordering
-        self._inner = monomial_ordering
-    def __call__(self, a, b):
-        aa = tuple(a[i] for i in self._vars)
-        bb = tuple(b[i] for i in self._vars)
-        return self._inner(aa, bb)
+    return q1 == q2
 
 
 def squarefree_ideal(F):
@@ -106,13 +43,24 @@ def squarefree_ideal(F):
                 monic_generator = g.normalized(GrevlexOrdering())
                 break
         assert monic_generator is not None
-        print 'monic generator: ',monic_generator
+        print 'monic generator: ', monic_generator
         sqf = squarefree(monic_generator, var=i, ordering=GrevlexOrdering()).normalized(GrevlexOrdering())
-        print '  square free: ',sqf
+        print '  square free: ', sqf
         if sqf != monic_generator:
             print 'appending'
             F_ext.append(sqf)
     return F_ext
+
+
+def squarefree(f, var=0, ordering=GrevlexOrdering()):
+    f = f.astype(fractions.Fraction)
+    fp = f.partial_derivative(var)
+    def mod(a, b):
+        q, r = a.divide_by(b, ordering)
+        return r
+    q, r = f.divide_by(ring.gcd(f, fp, mod), ordering)
+    assert r == 0
+    return q
 
 
 def main():
@@ -134,10 +82,15 @@ def main():
 
     # Evaluate on the variety to confirm zeros
     print '\nEvaluated at zeros:'
-
     fun = polynomial_vector(F)
     for zero in zeros:
         print 'I(%s) = %s' % (','.join(map(str, zero)), fun(*zero))
+
+    # Evaluate jacobian on the variety
+    J = polynomial_jacobian(F)
+    for zero in zeros:
+        print '\nJacobian at %s:' % zero
+        print J(*zero)
 
     # Set up a grobner basis
     print '\nGrobner basis:'
@@ -147,19 +100,10 @@ def main():
     # Construct a linear basis for the quotient algebra
     basis_monomials = quotient_algebra_basis(G, ordering)
     print '\nQuotient algebra monomials:'
-    print [ Term(1,monomial) for monomial in basis_monomials ]
+    print [ Term(1, monomial) for monomial in basis_monomials ]
 
     # Construct the action matrix for x
-    rem = lambda f: remainder(f, G, ordering)
-    remainders = [ rem(p*monomial) for monomial in basis_monomials ]
-    M,B = matrix_form(remainders, basis_monomials)
-    M = M.T.astype(float)
-
-
-    print 'Remainders:'
-    for m,r in zip(basis_monomials,remainders):
-        print '  rem(%s) = %s' % (p*m, r)
-
+    M = action_matrix_from_grobner_basis(p, G, ordering).astype(float)
     print 'Multiplication matrix for %s:' % p
     print M
 

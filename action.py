@@ -1,85 +1,53 @@
-import numpy as np
-import scipy.linalg
+__author__ = 'alexflint'
+
 
 from polynomial import *
 
-F = parse('x**2 + y**2 - 1', 'x-y')
-Ls = [ [], [(1,0), (0,1)] ]
-basis = { (0,1), (0,0) }
-num_vars = 2
-var = 0
 
-print 'F:'
-for f in F:
-    print '  ',f
+class QuotientAlgebraError(Exception):
+    pass
 
-F_ext = list(F)
-for f,L in zip(F,Ls):
-    for monomial in L:
-        F_ext.append(f * monomial)
 
-print 'F_ext:'
-for f in F_ext:
-    print '  ',f
+def monomials_not_divisible_by(monomials):
+    """Find all monomials not divisible by any monomial in M.
+    Raises QuotientAlgebraError if there are an infinite
+    number of such monomials."""
+    if len(monomials) == 0:
+        raise QuotientAlgebraError('list of leading monomials was empty')
 
-var_monomial = tuple(i==var for i in range(num_vars))
-monomials = set(term.monomial for f in F for term in f.terms)
-products = set(multiply_monomial(var_monomial, b) for b in basis)
-required = products.difference(basis)
-nuissance = monomials.difference(set.union(basis, required))
+    # Find the univariate leading terms
+    rect = [None] * len(monomials[0])
+    for monomial in monomials:
+        active_vars = [ (i,a) for i,a in enumerate(monomial) if a>0 ]
+        if len(active_vars) == 1:
+            i,a = active_vars[0]
+            if rect[i] is None or rect[i] > a:
+                rect[i] = a
 
-print '\nNuissance:'
-for x in nuissance:
-    print '  ',as_polynomial(x, num_vars)
-print 'Required:'
-for x in required:
-    print '  ',as_polynomial(x, num_vars)
-print 'Basis:'
-for x in basis:
-    print '  ',as_polynomial(x, num_vars)
+    # Is the quotient algebra finite dimensional?
+    if any(ri is None for ri in rect):
+        raise QuotientAlgebraError('quotient algebra does not have a finite basis')
 
-nn = len(nuissance)
-nr = len(required)
-nb = len(basis)
+    # Find monomials not divisble by the basis
+    output = []
+    for candidate in itertools.product(*map(range, rect)):
+        if not any(can_divide_monomial(candidate, m) for m in monomials):
+            output.append(candidate)
+    return output
 
-ordering = list(nuissance) + list(required) + list(basis)
 
-C,X = matrix_form(F_ext, ordering)
-C = C.astype(float)
+def quotient_algebra_basis(fs, ordering):
+    """Find the set of monomials not divisible by any leading term in fs."""
+    # Get the list of leading terms
+    leading_monomials = [ f.leading_term(ordering).monomial for f in fs ];
+    return monomials_not_divisible_by(leading_monomials)
 
-print '\nC:'
-print C
 
-print '\nX:'
-for x in X:
-    print '  ',x
+def action_matrix_from_grobner_basis(p, G, ordering):
+    # Construct a linear basis for the quotient algebra
+    basis_monomials = quotient_algebra_basis(G, ordering)
 
-P,L,U = scipy.linalg.lu(C)
-
-print '\nU:'
-print U
-
-C2 = U[ nn:, nn: ]
-
-print '\nC2:'
-print C2
-
-C_R2 = C2[ -nr:, :nr  ]
-C_B2 = C2[ -nr:,  nr: ]
-
-print '\nC_R2:'
-print C_R2
-print '\nC_B2:'
-print C_B2
-
-A = - np.dot(np.linalg.inv(C_R2), C_B2)
-
-print '\nA:'
-print A
-
-eigvals,eigvecs = scipy.linalg.eig(A)
-print '\nEigenvalues:'
-print eigvals
-print '\nEigenvectors:'
-print eigvecs
-
+    # Construct the action matrix for x
+    remainders = [remainder(p*monomial, G, ordering) for monomial in basis_monomials]
+    M, B = matrix_form(remainders, basis_monomials)
+    return M.T

@@ -19,7 +19,7 @@ def solve_triangular(F, threshold=1e-3):
             fcur = F[i]
             for var_index,value in enumerate(root):
                 fcur = fcur.evaluate_partial(n-var_index-1, value)
-            cur_roots,cur_brackets = solve_univariate(fcur.squeeze())
+            cur_roots,cur_brackets = solve_univariate(fcur.squeezed())
             roots.extend(cur_roots)
         candidate_roots.append(roots)
 
