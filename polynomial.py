@@ -20,7 +20,7 @@ class DivisionError(Exception):
 class VariableMismatchError(Exception):
     pass
 
-class AsPolynomialError(Exception):
+class CoerceError(Exception):
     pass
 
 class GrobnerBasisTooLargeError(Exception):
@@ -112,28 +112,36 @@ def as_term(x, num_vars):
         # Interpret terms as length-1 polynomials
         return x
     else:
-        raise TypeError('cannot convert %s to term' % type(x))
+        raise CoerceError('cannot convert %s to term' % type(x))
 
 
-def as_polynomial(x, num_vars, ctype=None):
+def as_polynomial(x, num_vars=None, ctype=None):
     """Convert scalars, terms, or monomials to polynomials."""
     if isinstance(x, numbers.Real):
         # Interpret scalars as constant polynomials
-        return Polynomial.create([Term(x, (0,)*num_vars)], num_vars, ctype)
+        if num_vars is None:
+            raise VariableMismatchError('when passing scalars you must specify num_vars')
+        return Polynomial.constant(x, num_vars, ctype=ctype)
+
     elif isinstance(x, tuple):
         # Interpret tuples as monomials
-        return Polynomial.create([Term(1, x)], num_vars, ctype)
+        if num_vars is not None and len(x) != num_vars:
+            raise VariableMismatchError('found %d vars but expected %d' % (len(x), num_vars))
+        return Polynomial.from_monomial(x, ctype=ctype)
+
     elif isinstance(x, Term):
         # Interpret terms as length-1 polynomials
-        if not x.num_vars == num_vars:
+        if num_vars is not None and x.num_vars != num_vars:
             raise VariableMismatchError('found %d vars but expected %d' % (x.num_vars, num_vars))
-        return Polynomial.create([x], num_vars, ctype)
+        return Polynomial.from_term(x, ctype=ctype)
+
     elif isinstance(x, Polynomial):
-        if not x.num_vars == num_vars:
+        if num_vars is not None and x.num_vars != num_vars:
             raise VariableMismatchError('found %d vars but expected %d' % (x.num_vars, num_vars))
         return x
+
     else:
-        raise AsPolynomialError('cannot convert %s to polynomial' % type(x))
+        raise CoerceError('cannot convert %s to polynomial' % type(x))
 
 
 class MonomialOrdering(object):
@@ -259,7 +267,7 @@ class Monomial(object):
     def __call__(self, *xs):
         """Evaluate this monomial at x."""
         assert len(xs) == len(self)
-        return product(x**a for x, a in zip(x, self))
+        return product(x**a for x, a in zip(xs, self))
 
     def divides(self, rhs):
         """Return true if each exponent in this term is greater or
@@ -318,13 +326,16 @@ class Term(object):
     c * x1^a1 * ... * xn^an."""
 
     def __init__(self, coef, monomial, ctype=None):
-        self._monomial = monomial
-        if ctype is None:
-            self._coef = coef
-            self._ctype = type(coef)
-        else:
+        if not all(isinstance(m, numbers.Integral) for m in monomial):
+            raise ValueError('monomial exponents should be integers')
+        self._monomial = tuple(monomial)
+        self._ctype = ctype or type(coef)
+        if ctype is not None and not isinstance(coef, ctype):
             self._coef = ctype(coef)
-            self._ctype = ctype
+        else:
+            self._coef = coef
+        assert isinstance(self._coef, numbers.Real), 'coef='+str(self._coef)
+        assert all(isinstance(exponent, numbers.Integral) for exponent in self._monomial)
 
     @property
     def coef(self):
@@ -332,6 +343,7 @@ class Term(object):
 
     @coef.setter
     def coef(self, value):
+        assert isinstance(value, numbers.Real)
         self._coef = self._ctype(value)
 
     @property
@@ -353,7 +365,7 @@ class Term(object):
         if ctype == self.ctype:
             return self
         else:
-            return Term(self.coef, self.monomial, ctype)
+            return Term(self.coef, self.monomial, ctype=ctype)
 
     def __eq__(self, rhs):
         rhs = as_term(rhs, len(self.monomial))
@@ -363,20 +375,16 @@ class Term(object):
         return not (self == rhs)
 
     def _multiply_by(self, rhs):
-        if isinstance(rhs, numbers.Real):
-            self.coef *= rhs
-        else:
-            self.coef *= rhs.coef
-            self._monomial = multiply_monomial(self.monomial, rhs.monomial)
+        rhs = as_term(rhs, self.num_vars)
+        self.coef *= rhs.coef
+        self._monomial = multiply_monomial(self.monomial, rhs.monomial)
 
     def _divide_by(self, rhs):
-        if isinstance(rhs, numbers.Real):
-            self.coef /= rhs
-        else:
-            if not rhs.divides(self):
-                raise DivisionError('Cannot divide %s by %s' % (term,rhs))
-            self.coef /= rhs.coef
-            self._monomial = divide_monomial(self.monomial, rhs.monomial)
+        rhs = as_term(rhs, self.num_vars)
+        if not rhs.divides(self):
+            raise DivisionError('Cannot divide %s by %s' % (self, rhs))
+        self.coef /= rhs.coef
+        self._monomial = divide_monomial(self.monomial, rhs.monomial)
 
     def _negate(self):
         self.coef = -self.coef
@@ -396,10 +404,10 @@ class Term(object):
     def __neg__(self):
         return Term(-self.coef, self.monomial, self.ctype)
 
-    def __call__(self, *x):
+    def __call__(self, *xs):
         """Evaluate this term at x."""
-        assert len(x) == len(self.monomial)
-        return self.coef * product(xi**ai for xi, ai in zip(x, self.monomial))
+        assert len(xs) == len(self.monomial)
+        return self.coef * product(x**a for x, a in zip(xs, self.monomial))
 
     def evaluate_partial(self, var_index, value):
         """Create a new term with by evaluating this term at the given
@@ -547,9 +555,25 @@ class Polynomial(object):
         return p
 
     @classmethod
+    def constant(cls, c, num_vars, ctype=None):
+        """Construct the constant polynomial p(x)=c."""
+        return Polynomial.create([Term(c, (0,)*num_vars)], num_vars, ctype)
+
+    @classmethod
     def coordinate(cls, var_index, num_vars, ctype=None):
         """Construct a polynomial corresponding to the i-th variable."""
+        assert 0 <= var_index < num_vars
         return Polynomial.create([Term(1, tuple(i==var_index for i in range(num_vars)))], num_vars, ctype)
+
+    @classmethod
+    def from_monomial(cls, monomial, coefficient=1, ctype=None):
+        """Construct a polynomial from a single monomial."""
+        return Polynomial.create([Term(coefficient, monomial)], len(monomial), ctype)
+
+    @classmethod
+    def from_term(cls, term, ctype=None):
+        """Construct a polynomial from a single term."""
+        return Polynomial.create([term], len(term.monomial), ctype)
 
     @property
     def num_vars(self):
@@ -610,7 +634,9 @@ class Polynomial(object):
     def trailing_terms(self, ordering=None):
         """Return a polynomial consisting of all terms in this
         polynomial other than the leading term."""
-        return Polynomial.create(self.sorted_terms(ordering)[:-1], self.num_vars, self.ctype)
+        return Polynomial.create(self.sorted_terms(self._resolve_ordering(ordering))[:-1],
+                                 self.num_vars,
+                                 self.ctype)
 
     def divides(self, rhs, ordering=None):
         return any([ self.leading_term(ordering).divides(term) for term in rhs ])
@@ -744,7 +770,7 @@ class Polynomial(object):
             # dictionaries conveniently do an automatic deep comparison
             # including checking for missing elements
             return rhs._term_dict == self._term_dict
-        except AsPolynomialError:
+        except CoerceError:
             return NotImplemented
 
     def __ne__(self, rhs):
@@ -756,7 +782,7 @@ class Polynomial(object):
             result = self.copy(result_type(self.ctype, rhs.ctype))
             result._add_terms(rhs)
             return result
-        except AsPolynomialError:
+        except CoerceError:
             return NotImplemented
 
     def __sub__(self, rhs):
@@ -766,17 +792,17 @@ class Polynomial(object):
             result._negate_terms()
             result._add_terms(self)
             return result
-        except AsPolynomialError:
+        except CoerceError:
             return NotImplemented
 
     def __mul__(self, rhs):
         try:
             rhs = as_polynomial(rhs, self.num_vars)
             result = Polynomial(self.num_vars, result_type(self.ctype, rhs.ctype))
-            for lterm,rterm in itertools.product(self, rhs):
+            for lterm, rterm in itertools.product(self, rhs):
                 result._add_term(lterm*rterm)
             return result
-        except AsPolynomialError:
+        except CoerceError:
             return NotImplemented
 
     def __pow__(self, rhs):
@@ -788,20 +814,25 @@ class Polynomial(object):
         return result
 
     def __truediv__(self, rhs):
-        """We only support division by a scalar. To perform polynomial
+        """We only support division by a single terms. To perform polynomial
         division, use f%g to compute the remainder, f//g to compute
         the quotient, or divide_by() to compute both."""
-        if not isinstance(rhs, numbers.Rational):
+        try:
+            rhs = as_term(rhs, self.num_vars)
+        except CoerceError:
             return NotImplemented
-        return self * fractions.Fraction(1, rhs)
+        result = self.copy(result_type(self.ctype, rhs.ctype))
+        result._divide_terms_by(rhs)
+        return result
+
 
     def __floordiv__(self, rhs):
         # TODO: avoid putting a default in here - an OrderedPolynomial class perhaps?
         try:
             rhs = as_polynomial(rhs, self.num_vars)
-            quotient,remainder = self.divide_by(rhs, GrevlexOrdering())
+            quotient, remainder = self.divide_by(rhs, GrevlexOrdering())
             return quotient
-        except AsPolynomialError:
+        except CoerceError:
             return NotImplemented
 
     def __neg__(self):
@@ -815,37 +846,37 @@ class Polynomial(object):
             rhs = as_polynomial(rhs, self.num_vars)
             quotient,remainder = self.divide_by(rhs, GrevlexOrdering())
             return remainder
-        except AsPolynomialError:
+        except CoerceError:
             return NotImplemented
 
     def __rmul__(self, lhs):
         try:
             return as_polynomial(lhs, self.num_vars) * self
-        except AsPolynomialError:
+        except CoerceError:
             return NotImplemented
 
     def __radd__(self, lhs):
         try:
             return as_polynomial(lhs, self.num_vars) + self
-        except TypeError:
+        except CoerceError:
             return NotImplemented
 
     def __rsub__(self, lhs):
         try:
             return as_polynomial(lhs, self.num_vars) - self
-        except TypeError:
+        except CoerceError:
             return NotImplemented
 
     def __rmod__(self, lhs):
         try:
             return as_polynomial(lhs, self.num_vars) % self
-        except TypeError:
+        except CoerceError:
             return NotImplemented
 
     def __rfloordiv__(self, lhs):
         try:
             return as_polynomial(lhs, self.num_vars) // self
-        except TypeError:
+        except CoerceError:
             return NotImplemented
 
     def __call__(self, *x):
@@ -925,22 +956,24 @@ class Polynomial(object):
         else:
             return ' + '.join(term.python_expression(varnames) for term in self)
 
-    def format(self, ordering=GrevlexOrdering(), use_superscripts=True):
+    def format(self, ordering=GrevlexOrdering(), use_superscripts=True, compact=False):
         """Construct a string representation of this polynomial."""
         if len(self) == 0:
             return '0'
         else:
             parts = []
+            plus = '+' if compact else ' + '
+            minus = '-' if compact else ' - '
             for term in self.sorted_terms(ordering, reverse=True):
                 if term.coef < 0:
                     if len(parts) == 0:
                         parts.append('-')
                     else:
-                        parts.append(' - ')
+                        parts.append(minus)
                     term = -term
                 else:
                     if len(parts) != 0:
-                        parts.append(' + ')
+                        parts.append(plus)
                 parts.append(term.format(use_superscripts))
             return ''.join(parts)
 
@@ -992,7 +1025,8 @@ def remainder(f, H, ordering=None):
     i = 0
     while i < len(H):
         if H[i].divides(remainder, ordering):
-            quotient,remainder = remainder.divide_by(H[i], ordering)
+            old = remainder
+            quotient, remainder = remainder.divide_by(H[i], ordering)
             quotients[i] += quotient
             i = 0
         else:
@@ -1012,7 +1046,7 @@ def matrix_form(F, ordering=None):
     else:
         monomials = list(set(*(f.monomials for f in F)))
     X = [ as_polynomial(monomial, F[0].num_vars) for monomial in monomials ]
-    C = np.asarray([[ f[monomial] for monomial in monomials ] for f in F])
+    C = np.asarray([[ f.coefficients[monomial] for monomial in monomials ] for f in F])
     return C, X
 
 
@@ -1054,14 +1088,18 @@ def s_poly(f, g, ordering):
     assert f.ctype == g.ctype
     ltf = f.leading_term(ordering)
     ltg = g.leading_term(ordering)
-    common = Term(1, lcm(ltf.monomial, ltg.monomial), f.ctype)
-    return as_polynomial(common/ltf, f.num_vars) * f + as_polynomial(common/ltg, f.num_vars) * g
+    common = Polynomial.from_monomial(lcm(ltf.monomial, ltg.monomial), ctype=f.ctype)
+    return (common/ltf) * f - (common/ltg) * g
 
 
 def gbasis(F, ordering, limit=None):
     """Compute the Grobner basis for the ideal generated by F.
     If the limit parameter is given then an exception will be
     thrown if the size of the basis exceeds that number of equations."""
+
+    # Check that none of the polynomials are zero
+    if any(len(f) == 0 for f in F):
+        raise Exception('cannot compute grobner basis of a system containing the zero polynomial')
 
     # Initialize the grobner basis to a copy of F
     G = [ f.copy() for f in F ]
@@ -1072,8 +1110,8 @@ def gbasis(F, ordering, limit=None):
         if limit is not None and len(G) > limit:
             raise GrobnerBasisTooLargeError('Grobner basis reached %d elements' % len(G))
         updated = False
-        for fi,fj in itertools.combinations(F, 2):
-            s = s_poly(fi, fj, ordering)
+        for gi, gj in itertools.combinations(G, 2):
+            s = s_poly(gi, gj, ordering)
             r = remainder(s, G, ordering)
             if r != 0:
                 G.append(r)
@@ -1082,6 +1120,23 @@ def gbasis(F, ordering, limit=None):
 
     # Now we have a basis
     return G
+
+
+def is_grobner_basis(G, ordering):
+    for i, gi in enumerate(G):
+        for j, gj in enumerate(G[:i]):
+            lt_gi = gi.leading_term(ordering)
+            tt_gi = gi.trailing_terms(ordering)
+            lt_gj = gj.leading_term(ordering)
+            tt_gj = gj.trailing_terms(ordering)
+            lcm = Polynomial.from_monomial([max(a, b)
+                                            for a, b in zip(lt_gi.monomial, lt_gj.monomial)])
+            s = (tt_gi * lcm) // lt_gi - (tt_gj * lcm) // lt_gj
+            ss = (gi * lcm) // lt_gi - (gj * lcm) // lt_gj
+            assert s == ss
+            if remainder(s, G, ordering) != 0:
+                return False
+    return True
 
 
 #

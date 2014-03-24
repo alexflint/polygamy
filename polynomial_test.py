@@ -170,12 +170,10 @@ class PolynomialTest(unittest.TestCase):
         self.assertEqual(ff(-1,0), -3)
         self.assertEqual(ff(0, 1.5), 44.5625)
 
-    def test_inside_numpy_array(self):
+    def test_ndarray_of_polynomials(self):
         f, g, h = parse('x+y', '2*x**2', '4*x**4 + x**2 + 2*x*y + y**2')
         v = np.array([f, g])
         self.assertEqual(np.dot(v,v), h)
-        print f * np.eye(3)
-
 
 
 class IdealTest(unittest.TestCase):
@@ -190,6 +188,57 @@ class IdealTest(unittest.TestCase):
             self.assertNotEqual(f(0, 0), 0)
             for zero in zeros:
                 self.assertEqual(f(*zero), 0)
+
+
+class GrobnerBasisTest(unittest.TestCase):
+    def test_equivalent_remainders(self):
+        # This test checks that remainders computed with respect to Grobner
+        # bases in different orders are equivalent.
+
+        fs = parse('x**2*y + x + 3',
+                   'y**2 * y*x + 2',
+                   'x*y**2 + x*y + 1',
+                   ctype=fractions.Fraction)
+
+        p = fs[-1]
+        F = fs[:-1]
+        G_lex = gbasis(F, LexOrdering())
+
+        rem1 = remainder(p, G_lex, LexOrdering())
+        rem2 = remainder(p, G_lex[::-1], LexOrdering())
+        rem3 = remainder(p, G_lex[::2] + G_lex[1::2], LexOrdering())
+
+        self.assertEqual(rem1, rem2)
+        self.assertEqual(rem1, rem3)
+
+    def test_ideal_membership(self):
+        # This test checks that remainders computed with respect to Grobner
+        # bases with different monomial orderings all correctly identify
+        # ideal members
+
+        F = parse('x**2*y + x + 3',
+                  'y**2 * x*y + 2',
+                  'x*y**2 + x*y + 1',
+                  ctype=fractions.Fraction)
+
+        G_lex = gbasis(F, LexOrdering())
+        G_grlex = gbasis(F, GrlexOrdering())
+        G_grevlex = gbasis(F, GrevlexOrdering())
+
+        x = Polynomial.coordinate(0, 2)
+        y = Polynomial.coordinate(0, 2)
+
+        p1 = F[0] + F[1] + F[2]
+        p2 = F[0] - x*F[1]
+
+        self.assertEqual(remainder(p1, G_lex, LexOrdering()), 0)
+        self.assertEqual(remainder(p1, G_lex, LexOrdering()), 0)
+
+        self.assertEqual(remainder(p1, G_grlex, GrlexOrdering()), 0)
+        self.assertEqual(remainder(p1, G_grlex, GrlexOrdering()), 0)
+
+        self.assertEqual(remainder(p1, G_grevlex, GrevlexOrdering()), 0)
+        self.assertEqual(remainder(p1, G_grevlex, GrevlexOrdering()), 0)
 
 
 if __name__ == '__main__':

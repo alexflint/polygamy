@@ -44,8 +44,25 @@ def quotient_algebra_basis(fs, ordering):
 
 
 def action_matrix_from_grobner_basis(p, G, ordering):
+    assert isinstance(p, Polynomial)
+
+    # Do some sanity checks
+    if len(G) == 0:
+        raise QuotientAlgebraError('the provided grobner basis was empty')
+
+    # Check that each variable appears once
+    num_vars = G[0].num_vars
+    missing = [i for i in range(num_vars)
+               if all(term.monomial[i] == 0 for g in G for term in g)]
+    if len(missing) > 0:
+        s = ', '.join(map(str, missing))
+        raise QuotientAlgebraError('Grobner basis does not contain var %s' % s)
+
+
     # Construct a linear basis for the quotient algebra
     basis_monomials = quotient_algebra_basis(G, ordering)
+    if len(basis_monomials) == 0:
+        raise QuotientAlgebraError('system has no solutions (so there are zero basis monomials)')
 
     # Construct the action matrix for x
     remainders = [remainder(p*monomial, G, ordering) for monomial in basis_monomials]
