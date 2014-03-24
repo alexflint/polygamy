@@ -4,6 +4,7 @@ import unittest
 
 from modulo import *
 
+
 class ModuloTest(unittest.TestCase):
     def test_comparisons(self):
         a = ModuloInteger(3, 11)
@@ -63,6 +64,45 @@ class ModuloTest(unittest.TestCase):
         self.assertEqual(3 / a, 4)
         self.assertEqual(a / 2, 1)
         self.assertEqual(2 / a, 1)
+
+
+class ModuloTypeTest(unittest.TestCase):
+    def test_construct(self):
+        Z37 = ModuloInteger[37]
+        x = Z37(5)
+        self.assertEqual(x.r, 5)
+        self.assertEqual(x.n, 37)
+        self.assertIsInstance(x, Z37)
+
+    def test_equality(self):
+        Z37 = ModuloInteger[37]
+        also_Z37 = ModuloInteger[37]
+        Z39 = ModuloInteger[39]
+        self.assertEqual(Z37, also_Z37)
+        self.assertNotEqual(Z37, Z39)
+
+    def test_equality_vs_base(self):
+        self.assertNotEqual(ModuloInteger, ModuloInteger[37])
+        self.assertNotEqual(ModuloInteger[37], ModuloInteger)
+        self.assertEqual(ModuloInteger, ModuloInteger)
+
+    def test_base_class(self):
+        Z37 = ModuloInteger[37]
+        x = Z37(1)
+        self.assertIsInstance(x, Z37)
+        self.assertIsInstance(x, ModuloInteger)
+
+    def test_cross_isinstance(self):
+        self.assertIsInstance(ModuloInteger(2, 37), ModuloInteger[37])
+
+    def test_str(self):
+        self.assertEqual(str(ModuloInteger[37]), 'ModuloInteger[37]')
+        self.assertEqual(repr(ModuloInteger[37]), 'ModuloInteger[37]')
+
+    def test_integral(self):
+        self.assertIsInstance(ModuloInteger(1,4), numbers.Integral)
+        self.assertTrue(issubclass(ModuloInteger, numbers.Integral))
+        self.assertTrue(issubclass(ModuloInteger[5], numbers.Integral))
 
 
 if __name__ == '__main__':

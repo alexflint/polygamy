@@ -22,28 +22,52 @@ def multiplicative_inverse(r, n):
         raise ModularInverseError('%s has no inverse modulo %s' % (r,n))
     return a % n
 
-class ModuloIntegerType(object):
-    def __init__(self, n):
-        self._n = n
-    def __call__(self, r):
-        return ModuloInteger(r, self._n)
-    def __unicode__(self):
-        return 'Z'+unicode_rendering.subscript(self._n)
-    def __str__(self):
-        return unicode(self).encode('utf-8')
-    def __repr__(self):
-        return 'ModuloIntegerType(%d)' % self._n
-    def __eq__(self, rhs):
-        return isinstance(rhs, ModuloIntegerType) and self._n == rhs._n
-    def __ne__(self, rhs):
-        return not (self == rhs)
 
-class ModuloIntegerFactory(type):
-    def __getitem__(cls, index):
-        return ModuloIntegerType(index)
-    
+class ModuloIntegerType(type):
+    """The metaclass for the ModuloInteger class, which makes it
+    possible to construct types like ModuloInteger[41]."""
+    def __getitem__(cls, n):
+        return make_modulo_type(n)
+
+
+class IntegerRingType(ModuloIntegerType):
+    """The metaclass for classes representing the ring of integers
+    modulo some specific N."""
+    def __unicode__(cls):
+        return 'ModuloInteger[%d]' % cls._n
+    def __str__(cls):
+        return unicode(cls).encode('utf-8')
+    def __repr__(cls):
+        return str(cls)
+    def __eq__(cls, rhs):
+        return isinstance(rhs, IntegerRingType) and cls._n == rhs._n
+    def __ne__(cls, rhs):
+        return not (cls == rhs)
+    def __instancecheck__(cls, x):
+        return issubclass(type(x), ModuloInteger) and x.n == cls._n
+
+
+def make_modulo_type(n):
+    """Construct a type representing integers modulo n. Such types
+    are are derived from ModuloInteger and have a constructor taking
+    a single integer r."""
+    def __init__(self, r):
+        ModuloInteger.__init__(self, r, n)
+
+    name = 'ModuloInteger_%d' % n
+    bases = (ModuloInteger,)
+    dict = {
+        '__init__': __init__,
+        '_n' : n
+    }
+    return IntegerRingType(name, bases, dict)
+
+
 class ModuloInteger(object):
-    __metaclass__ = ModuloIntegerFactory
+    """Represents an element of the ring of integers modulo n."""
+    __metaclass__ = ModuloIntegerType
+
+    _n = None  # For compatibility with specific integer rings
 
     def __init__(self, r, n):
         '''Construct the integer r (mod n).'''
@@ -138,4 +162,8 @@ class ModuloInteger(object):
         return self
 
 
+# Tell the numbers module that ModuloIntegers can be treated as integer-like.
+# This means that:
+#   isinstance(ModuloInteger(r,n), numbers.Integral) -> True
+#   issubclass(ModuloInteger, numbers.Integral) -> True
 numbers.Integral.register(ModuloInteger)
