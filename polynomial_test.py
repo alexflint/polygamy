@@ -218,7 +218,7 @@ class GrobnerBasisTest(unittest.TestCase):
 
         F = parse('x**2*y + x + 3',
                   'y**2 * x*y + 2',
-                  'x*y**2 + x*y + 1',
+                  '-x*y**2 + x*y + 1',
                   ctype=fractions.Fraction)
 
         G_lex = gbasis(F, LexOrdering())
@@ -232,13 +232,13 @@ class GrobnerBasisTest(unittest.TestCase):
         p2 = F[0] - x*F[1]
 
         self.assertEqual(remainder(p1, G_lex, LexOrdering()), 0)
-        self.assertEqual(remainder(p1, G_lex, LexOrdering()), 0)
+        self.assertEqual(remainder(p2, G_lex, LexOrdering()), 0)
 
         self.assertEqual(remainder(p1, G_grlex, GrlexOrdering()), 0)
-        self.assertEqual(remainder(p1, G_grlex, GrlexOrdering()), 0)
+        self.assertEqual(remainder(p2, G_grlex, GrlexOrdering()), 0)
 
         self.assertEqual(remainder(p1, G_grevlex, GrevlexOrdering()), 0)
-        self.assertEqual(remainder(p1, G_grevlex, GrevlexOrdering()), 0)
+        self.assertEqual(remainder(p2, G_grevlex, GrevlexOrdering()), 0)
 
 
 if __name__ == '__main__':
