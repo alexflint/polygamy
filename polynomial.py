@@ -326,16 +326,16 @@ class Term(object):
     c * x1^a1 * ... * xn^an."""
 
     def __init__(self, coef, monomial, ctype=None):
-        if not all(isinstance(m, numbers.Integral) for m in monomial):
-            raise ValueError('monomial exponents should be integers')
+        #if not all(isinstance(m, numbers.Integral) for m in monomial):
+        #    raise ValueError('monomial exponents should be integers')
         self._monomial = tuple(monomial)
         self._ctype = ctype or type(coef)
         if ctype is not None and not isinstance(coef, ctype):
             self._coef = ctype(coef)
         else:
             self._coef = coef
-        assert isinstance(self._coef, numbers.Real), 'coef='+str(self._coef)
-        assert all(isinstance(exponent, numbers.Integral) for exponent in self._monomial)
+        #assert isinstance(self._coef, numbers.Real), 'coef='+str(self._coef)
+        #assert all(isinstance(exponent, numbers.Integral) for exponent in self._monomial)
 
     @property
     def coef(self):
@@ -651,6 +651,8 @@ class Polynomial(object):
         if self.ctype == int or rhs.ctype == int:
             print 'Warning: polynomial division with integer coefs will lead to unexpected round-off'
 
+        self._assert_compatible(rhs)
+
         lt_rhs = rhs.leading_term(ordering)
         tt_rhs = rhs.trailing_terms(ordering)
 
@@ -662,10 +664,10 @@ class Polynomial(object):
             lt_dividend = dividend._pop_leading_term(ordering)
             if lt_rhs.divides(lt_dividend):
                 factor = lt_dividend / lt_rhs
-                quotient._add_term(factor)
+                quotient._add_term_unchecked(factor)
                 dividend -= tt_rhs * factor
             else:
-                remainder._add_term(lt_dividend)
+                remainder._add_term_unchecked(lt_dividend)
 
         return quotient, remainder
 
@@ -679,7 +681,7 @@ class Polynomial(object):
         for term in self:
             if term.monomial[var_index] > 0:
                 derivative_coef = term.coef * term.monomial[var_index]
-                derivative_monomial = tuple(exponent - int(i==var_index) 
+                derivative_monomial = tuple(exponent - int(i==var_index)
                                             for i,exponent in enumerate(term.monomial))
                 result.coefficients[derivative_monomial] += derivative_coef
         return result
@@ -714,7 +716,7 @@ class Polynomial(object):
             lt = self.leading_term(ordering)
             result = Polynomial(self.num_vars, self.ctype)
             result.coefficients[lt.monomial] = 1
-            result._add_terms(term/lt.coef for term in self if term is not lt)
+            result._add_terms_unchecked(term/lt.coef for term in self if term is not lt)
             return result
 
     def _resolve_ordering(self, ordering=None):
@@ -737,12 +739,17 @@ class Polynomial(object):
     def _pop_leading_term(self, ordering=None):
         return self._term_dict.pop(self.leading_term(ordering).monomial)
 
-    def _add_term(self, rhs):
+    def _assert_compatible(self, rhs):
         if rhs.num_vars != self.num_vars:
             raise VariableMismatchError('cannot add a term with %d variables '+
                                         'to a polynomial over %d variables' %
                                         (rhs.num_vars, self.num_vars))
 
+    def _add_term(self, rhs):
+        self._assert_compatible(rhs)
+        self._add_term_unchecked(rhs)
+
+    def _add_term_unchecked(self, rhs):
         term = self._term_dict.get(rhs.monomial, None)
         if term is None:
             self._term_dict[rhs.monomial] = rhs.astype(self.ctype)
@@ -755,6 +762,10 @@ class Polynomial(object):
     def _add_terms(self, terms):
         for term in terms:
             self._add_term(term)
+
+    def _add_terms_unchecked(self, terms):
+        for term in terms:
+            self._add_term_unchecked(term)
 
     def _negate_terms(self):
         for term in self:
@@ -779,8 +790,9 @@ class Polynomial(object):
     def __add__(self, rhs):
         try:
             rhs = as_polynomial(rhs, self.num_vars)
+            self._assert_compatible(rhs)
             result = self.copy(result_type(self.ctype, rhs.ctype))
-            result._add_terms(rhs)
+            result._add_terms_unchecked(rhs)
             return result
         except CoerceError:
             return NotImplemented
@@ -788,9 +800,10 @@ class Polynomial(object):
     def __sub__(self, rhs):
         try:
             rhs = as_polynomial(rhs, self.num_vars)
+            self._assert_compatible(rhs)
             result = rhs.copy(result_type(self.ctype, rhs.ctype))
             result._negate_terms()
-            result._add_terms(self)
+            result._add_terms_unchecked(self)
             return result
         except CoerceError:
             return NotImplemented
@@ -798,9 +811,10 @@ class Polynomial(object):
     def __mul__(self, rhs):
         try:
             rhs = as_polynomial(rhs, self.num_vars)
+            self._assert_compatible(rhs)
             result = Polynomial(self.num_vars, result_type(self.ctype, rhs.ctype))
             for lterm, rterm in itertools.product(self, rhs):
-                result._add_term(lterm*rterm)
+                result._add_term_unchecked(lterm*rterm)
             return result
         except CoerceError:
             return NotImplemented
@@ -810,7 +824,7 @@ class Polynomial(object):
             return NotImplemented
         result = Polynomial(self.num_vars, self.ctype)
         for terms in itertools.product(self, repeat=rhs):
-            result._add_term(product(terms))
+            result._add_term_unchecked(product(terms))
         return result
 
     def __truediv__(self, rhs):
@@ -945,7 +959,7 @@ class Polynomial(object):
         namespace = {}
         exec code in namespace
         return namespace['f']
-        
+
     def python_expression(self, varnames=None):
         """Construct a representation of this polynomial as a python
         expression string."""
