@@ -53,6 +53,7 @@ def array_str(arr):
     ss.write(']')
     return ss.getvalue()
 
+
 def arraymap(f, x):
     if isinstance(x, Polynomial):
          return f(x)
@@ -62,8 +63,10 @@ def arraymap(f, x):
         except:
             return f(x)
 
+
 def astype(x, ctype):
     return arraymap(lambda xi: xi.astype(ctype) if isinstance(xi, Polynomial) else ctype(xi), x)
+
 
 def asfraction(x, denom_limit=None):
     return arraymap(lambda xi: Fraction(xi).limit_denominator(denom_limit), x)
@@ -82,56 +85,59 @@ def flatten(x):
     return L
 
 
+def cayley_mat(s):
+    return np.eye(3) * (1 - np.dot(s,s)) + 2*skew(s) + 2*np.outer(s,s)
+
+
+def cayley_denom(s):
+    return 1 + np.dot(s,s)
+
+
+def cayley(s):
+    return cayley_mat(s) / cayley_denom(s)
+
+
 def main():
     np.random.seed(123)
     np.set_printoptions(precision=5, suppress=True, linewidth=300)
     ordering = GrevlexOrdering()
 
     # Construct symbolic problem
-    time = Polynomial.coordinate(0, 5)
-    params = [ Polynomial.coordinate(i+1, 5, Fraction) for i in range(4) ]
+    num_landmarks = 4
+    nv = 1 + 4 + 4 + num_landmarks * 3
+    params = [ Polynomial.coordinate(i, nv, Fraction) for i in range(nv) ]
+    time = params[0]
+    p_controls = params[1:5]
+    s_controls = params[5:9]
+    landmarks = [params[9+i*3:9+i*3+3] for i in range(0, num_landmarks)]
 
-    p = evaluate_bezier(params, time)
+    p = evaluate_bezier(p_controls, time)
     v = p.partial_derivative(0)
     a = v.partial_derivative(0)
 
+    s = evaluate_bezier(s_controls, time)
+    
     # Sample ground truth
     true_times = [ Fraction(1,8), Fraction(4,8), Fraction(6,8), Fraction(7,8), Fraction(5,8) ]
-    true_params = [2, 1, 3, -5]
-    nv = len(true_params)
-
-    true_ys = [ p(t, *true_params) for t in true_times ]
-    noisy_ys = [ y + Fraction(np.random.randint(-3, 3), 10) for y in true_ys ]
-
-    print 'True ys:',true_ys
-    print 'Noisy ys:',noisy_ys
-
-    # Construct the polynomial system for the minimal problem version
-    minimal_system = []
-    for t, y in zip(true_times, true_ys):
-        g = p.evaluate_partial(0, t).drop(0)
-        minimal_system.append(p.evaluate_partial(0, t).drop(0) - y)
-
-    print '\nMinimal system:'
-    for f in minimal_system:
-        print '  ', f
+    true_params = np.random.rand(nv)
 
     # Construct the least squares spline cost
-    spline_cost = Polynomial(nv, Fraction)
-    for t, y in zip(true_times, noisy_ys):
-        residual = p.evaluate_partial(0, t).drop(0) - y
-        spline_cost += residual**2
+    cost = Polynomial(nv, Fraction)
+    for ti in zip(true_times, noisy_ys):
+        pi = p.evaluate_partial(0, ti).drop(0)
+        si = s.evaluate_partial(0, ti).dtop(0)
+        Ri = cayley_mat(s)  # TODO: denominator!!
+
+        for xi in landmarks:
+            yi = np.dot(Ri, xi-pi)
+
+        true_pi = [ p(t, *true_params) for t in true_times ]
+
+        
+
+        cost += residual**2
 
 
-
-    def cayley_mat(s):
-        return np.eye(3) * (1 - np.dot(s,s)) + 2*skew(s) + 2*np.outer(s,s)
-
-    def cayley_denom(s):
-        return 1 + np.dot(s,s)
-
-    def cayley(s):
-        return cayley_mat(s) / cayley_denom(s)
 
     # Construct the least squares cost for rotation estimation
     nv = 3
