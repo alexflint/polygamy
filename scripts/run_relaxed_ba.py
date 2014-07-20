@@ -1,8 +1,8 @@
 from fractions import Fraction
 import numpy as np
 
-from polynomial import Polynomial, polynomial_jacobian, polynomial_vector, GrevlexOrdering, gbasis
-from spline import evaluate_bezier
+from polynomial import Polynomial
+from spline import evaluate_bezier, evaluate_bezier_deriv, evaluate_bezier_second_deriv
 
 from scripts.utils import cayley, cayley_mat, cayley_denom, array_str, flatten, astype, asfraction, skew
 
@@ -217,23 +217,29 @@ def evaluate_zero_offset_bezier(params, t):
         return evaluate_bezier(np.vstack((np.zeros(len(params[0])), params)), t)
 
 
+def evaluate_zero_offset_bezier_second_deriv(params, t):
+    return evaluate_bezier_second_deriv(np.vstack((np.zeros(len(params[0])), params)), t)
+
+
 def run_spline_epipolar():
     # Construct symbolic problem
     num_landmarks = 10
     num_frames = 3
+    num_imu_readings = 8
     bezier_degree = 3
 
     # Both splines should start at 0,0,0
-    true_times = np.linspace(0, .9, num_frames)
+    frame_times = np.linspace(0, .9, num_frames)
+    imu_times = np.linspace(0, 1, num_imu_readings)
+
     true_rot_controls = np.random.rand(bezier_degree-1, 3)
     true_pos_controls = np.random.rand(bezier_degree-1, 3)
 
     true_landmarks = np.random.randn(num_landmarks, 3)
-    true_cayleys = np.array([evaluate_zero_offset_bezier(true_rot_controls, t) for t in true_times])
-    true_positions = np.array([evaluate_zero_offset_bezier(true_pos_controls, t) for t in true_times])
+    true_cayleys = np.array([evaluate_zero_offset_bezier(true_rot_controls, t) for t in frame_times])
+    true_positions = np.array([evaluate_zero_offset_bezier(true_pos_controls, t) for t in frame_times])
 
-    print true_positions
-    print true_cayleys
+    true_accels = np.array([evaluate_zero_offset_bezier_second_deriv(true_pos_controls, t) for t in imu_times])
 
     true_qs = map(cayley_mat, true_cayleys)
     true_rotations = map(cayley, true_cayleys)
@@ -259,6 +265,8 @@ def run_spline_epipolar():
     p_offs = s_offs + (bezier_degree-1)*3
     num_vars = p_offs + (bezier_degree-1)*3
 
+    print 'num_vars:',num_vars
+
     vars = [Polynomial.coordinate(i, num_vars, Fraction) for i in range(num_vars)]
     sym_rot_controls = np.reshape(vars[s_offs:s_offs+(bezier_degree-1)*3], (bezier_degree-1, 3))
     sym_pos_controls = np.reshape(vars[p_offs:p_offs+(bezier_degree-1)*3], (bezier_degree-1, 3))
@@ -267,11 +275,19 @@ def run_spline_epipolar():
                            true_pos_controls.flatten()))
 
     residuals = []
+
+    # Accel residuals
+    for i in range(num_imu_readings):
+        sym_a = evaluate_zero_offset_bezier_second_deriv(sym_pos_controls, imu_times[i])
+        residual = sym_a - true_accels[i]
+        residuals.extend(residual)
+
+    # Epipolar residuals
     p0 = np.zeros(3)
     R0 = np.eye(3)
     for i in range(1, num_frames):
-        sym_s = evaluate_zero_offset_bezier(sym_rot_controls, true_times[i])
-        sym_p = evaluate_zero_offset_bezier(sym_pos_controls, true_times[i])
+        sym_s = evaluate_zero_offset_bezier(sym_rot_controls, frame_times[i])
+        sym_p = evaluate_zero_offset_bezier(sym_pos_controls, frame_times[i])
         sym_q = cayley_mat(sym_s)
         sym_q = np.eye(3) * (1. - np.dot(sym_s, sym_s)) + 2.*skew(sym_s) + 2.*np.outer(sym_s, sym_s)
         sym_E = essential_matrix(R0, p0, sym_q, sym_p)
