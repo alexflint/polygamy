@@ -330,6 +330,16 @@ def run_spline_epipolar():
     print H.shape
     print np.linalg.eigvals(H)
 
+    # Output to file
+    with open('out/epipolar_accel_bezier3.txt', 'w') as fd:
+        for gi in gradient:
+            fd.write(gi.format(use_superscripts=False, compact=True) + ';\n')
+
+    with open('out/epipolar_accel_bezier3_soln.txt', 'w') as fd:
+        for i, xi in enumerate(true_vars):
+            fd.write('x%d %.12f\n' % (i, xi))
+
+
 
 def main():
     np.random.seed(123)
