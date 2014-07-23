@@ -343,8 +343,10 @@ class Term(object):
 
     @coef.setter
     def coef(self, value):
-        assert isinstance(value, numbers.Real)
-        self._coef = self._ctype(value)
+        if type(value) == self._ctype:
+            self._coef = value
+        else:
+            self._coef = self._ctype(value)
 
     @property
     def monomial(self):
@@ -747,12 +749,12 @@ class Polynomial(object):
 
     def _add_term(self, rhs):
         self._assert_compatible(rhs)
-        self._add_term_unchecked(rhs)
+        self._add_term_unchecked(rhs.astype(self.ctype))
 
     def _add_term_unchecked(self, rhs):
         term = self._term_dict.get(rhs.monomial, None)
         if term is None:
-            self._term_dict[rhs.monomial] = rhs.astype(self.ctype)
+            self._term_dict[rhs.monomial] = rhs  #.astype(self.ctype)
             term = rhs
         else:
             term.coef += rhs.coef
@@ -1174,10 +1176,8 @@ def parse(*exprs, **kwargs):
 
     # Construct polynomials corresponding to each variable
     ctype = kwargs.get('ctype', None)
-    variables = { }
-    for i,var in enumerate(variable_order):
-        monomial = tuple(int(x==i) for x in range(len(variable_order)))
-        variables[var] = Polynomial.create([Term(1,monomial)], len(variable_order), ctype)
+    variables = {var: Polynomial.coordinate(i, len(variable_order), ctype=ctype)
+                 for i, var in enumerate(variable_order)}
 
     # Evaluate
     polynomials = tuple(eval(expr, variables) for expr in exprs)

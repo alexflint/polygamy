@@ -1,7 +1,7 @@
 from fractions import Fraction
 import numpy as np
 
-from polynomial import Polynomial
+from polynomial import Polynomial, parse
 from spline import evaluate_bezier, evaluate_bezier_deriv, evaluate_bezier_second_deriv
 
 from scripts.utils import cayley, cayley_mat, cayley_denom, array_str, flatten, astype, asfraction, skew
@@ -333,23 +333,40 @@ def run_spline_epipolar():
     # Output to file
     with open('out/epipolar_accel_bezier3.txt', 'w') as fd:
         for gi in gradient:
-            fd.write(gi.format(use_superscripts=False, compact=True) + ';\n')
+            fd.write(gi.format(use_superscripts=False) + ';\n')
+
+    # Output to file
+    with open('out/epipolar_accel_bezier3_cost.txt', 'w') as fd:
+        fd.write(cost.format(use_superscripts=False) + ';\n')
 
     with open('out/epipolar_accel_bezier3_soln.txt', 'w') as fd:
         for i, xi in enumerate(true_vars):
             fd.write('x%d %.12f\n' % (i, xi))
 
 
+def load_polynomials(path):
+    return parse(*[line.strip('; \n').replace('^', '**') for line in open(path)])
+
+
+def analyze_polynomial():
+    print 'Loading polynomials...'
+    cost = load_polynomials('out/epipolar_accel_Bezier3_cost.txt')
+    print '  Done loading.'
+
+    assert isinstance(cost, Polynomial)
+    print len(cost), cost.total_degree
+
 
 def main():
     np.random.seed(123)
     np.set_printoptions(precision=5, suppress=True, linewidth=300)
 
-    run_spline_epipolar()
+    analyze_polynomial()
+    #run_spline_epipolar()
     #run_epipolar()
     #run_sfm()
 
-if __name__ == '__main__':
+def profile_main():
     import cProfile, pstats
     pr = cProfile.Profile()
     pr.enable()
@@ -358,5 +375,7 @@ if __name__ == '__main__':
     finally:
         pr.disable()
         pstats.Stats(pr).sort_stats('tottime').print_stats(30)
-        import sys
-        sys.stdout.flush()
+
+
+if __name__ == '__main__':
+    main()
