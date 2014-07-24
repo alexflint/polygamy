@@ -1,11 +1,13 @@
+import os
 from fractions import Fraction
 import numpy as np
+import scipy.optimize
 
 from polynomial import Polynomial, parse
-from spline import evaluate_bezier, evaluate_bezier_deriv, evaluate_bezier_second_deriv
+from spline import evaluate_bezier, evaluate_bezier_second_deriv
 
-from scripts.utils import cayley, cayley_mat, cayley_denom, array_str, flatten, astype, asfraction, skew
-
+from scripts.utils import cayley, cayley_mat, cayley_denom, skew
+import compilation
 
 def normalized(x):
     x = np.asarray(x)
@@ -226,7 +228,11 @@ def run_spline_epipolar():
     num_landmarks = 10
     num_frames = 3
     num_imu_readings = 8
-    bezier_degree = 3
+    bezier_degree = 4
+    out = 'out/epipolar_accel_bezier3'
+
+    if not os.path.isdir(out):
+        os.mkdir(out)
 
     # Both splines should start at 0,0,0
     frame_times = np.linspace(0, .9, num_frames)
@@ -258,14 +264,12 @@ def run_spline_epipolar():
         for j in range(num_landmarks):
             z = true_projections[i][j]
             z0 = true_projections[0][j]
-            print np.dot(z, np.dot(E, z0))
+            #print np.dot(z, np.dot(E, z0))
 
     # construct symbolic versions of the above
     s_offs = 0
     p_offs = s_offs + (bezier_degree-1)*3
     num_vars = p_offs + (bezier_degree-1)*3
-
-    print 'num_vars:',num_vars
 
     vars = [Polynomial.coordinate(i, num_vars, Fraction) for i in range(num_vars)]
     sym_rot_controls = np.reshape(vars[s_offs:s_offs+(bezier_degree-1)*3], (bezier_degree-1, 3))
@@ -289,7 +293,7 @@ def run_spline_epipolar():
         sym_s = evaluate_zero_offset_bezier(sym_rot_controls, frame_times[i])
         sym_p = evaluate_zero_offset_bezier(sym_pos_controls, frame_times[i])
         sym_q = cayley_mat(sym_s)
-        sym_q = np.eye(3) * (1. - np.dot(sym_s, sym_s)) + 2.*skew(sym_s) + 2.*np.outer(sym_s, sym_s)
+        #sym_q = np.eye(3) * (1. - np.dot(sym_s, sym_s)) + 2.*skew(sym_s) + 2.*np.outer(sym_s, sym_s)
         sym_E = essential_matrix(R0, p0, sym_q, sym_p)
         for j in range(num_landmarks):
             z = true_projections[i][j]
@@ -311,19 +315,25 @@ def run_spline_epipolar():
     print '  Degree: %d' % cost.total_degree
 
     print '\nGradients:'
-    gradient = [cost.partial_derivative(i) for i in range(num_vars)]
-    for gi in gradient:
-        print '  %d  (degree=%d, length=%d)' % (gi(*true_vars), gi.total_degree, len(gi))
+    gradients = cost.partial_derivatives()
+    for gradient in gradients:
+        print '  %d  (degree=%d, length=%d)' % (gradient(*true_vars), gradient.total_degree, len(gradient))
 
-    J = np.array([[r.partial_derivative(i)(*true_vars) for i in range(num_vars)]
-                  for r in residuals])
+    jacobians = [r.partial_derivatives() for r in residuals]
+
+    J = np.array([[J_ij(*true_vars) for J_ij in row] for row in jacobians])
+
+    U, S, V = np.linalg.svd(J)
 
     print '\nJacobian singular values:'
     print J.shape
-    U,S,V = np.linalg.svd(J)
     print S
-    print V[-1]
-    print V[-2]
+    null_space_dims = sum(np.abs(S) < 1e-5)
+    if null_space_dims > 0:
+        print '\nNull space:'
+        for i in null_space_dims:
+            print V[-i]
+            print V[-2]
 
     print '\nHessian eigenvalues:'
     H = np.dot(J.T, J)
@@ -331,21 +341,45 @@ def run_spline_epipolar():
     print np.linalg.eigvals(H)
 
     # Output to file
-    with open('out/epipolar_accel_bezier3.txt', 'w') as fd:
-        for gi in gradient:
-            fd.write(gi.format(use_superscripts=False) + ';\n')
+    with open(out+'/gradients.txt', 'w') as fd:
+        for gradient in gradients:
+            fd.write(gradient.format(use_superscripts=False) + ';\n')
 
-    # Output to file
-    with open('out/epipolar_accel_bezier3_cost.txt', 'w') as fd:
+    with open(out+'/residuals.txt', 'w') as fd:
+        for residual in residuals:
+            fd.write(residual.format(use_superscripts=False) + ';\n')
+
+    with open(out+'/jacobians.txt', 'w') as fd:
+        for row in jacobians:
+            for j in row:
+                fd.write(j.format(use_superscripts=False) + ';\n')
+
+    with open(out+'/cost.txt', 'w') as fd:
         fd.write(cost.format(use_superscripts=False) + ';\n')
 
-    with open('out/epipolar_accel_bezier3_soln.txt', 'w') as fd:
+    with open(out+'/solution.txt', 'w') as fd:
         for i, xi in enumerate(true_vars):
             fd.write('x%d %.12f\n' % (i, xi))
 
 
 def load_polynomials(path):
     return parse(*[line.strip('; \n').replace('^', '**') for line in open(path)])
+
+
+def load_functions(path, varnames):
+    return [compilation.function_from_expression(line.strip('; \n').replace('^', '**'), varnames)
+            for line in open(path)]
+
+
+def load_solution(path):
+    varnames = []
+    solution = []
+    with open(path) as fd:
+        for line in fd:
+            var, value = line.strip().split()
+            varnames.append(var)
+            solution.append(float(value))
+    return varnames, np.array(solution)
 
 
 def analyze_polynomial():
@@ -357,11 +391,69 @@ def analyze_polynomial():
     print len(cost), cost.total_degree
 
 
+def evaluate_array(arr, x):
+    arr = np.asarray(arr)
+    return np.array([a(*x) for a in arr.flat]).reshape(arr.shape)
+
+
+def analyze_polynomial2():
+    print 'Loading polynomials...'
+    varnames, true_values = load_solution('out/epipolar_accel_bezier3/solution.txt')
+    cost = load_functions('out/epipolar_accel_bezier3/cost.txt', varnames)[0]
+    residuals = load_functions('out/epipolar_accel_bezier3/residuals.txt', varnames)
+    jacobians = load_functions('out/epipolar_accel_bezier3/jacobians.txt', varnames)
+    gradients = load_functions('out/epipolar_accel_bezier3/gradients.txt', varnames)
+
+    residuals = np.array(residuals)
+    jacobians = np.array(jacobians).reshape((-1, len(varnames)))
+
+    def J(x):
+        print ' ... jacobian'
+        return evaluate_array(jacobians, x)
+
+    def r(x):
+        print ' ... residual'
+        return evaluate_array(residuals, x)
+
+    np.random.seed(765)
+    seed_values = true_values + np.random.rand(len(true_values)) * 100
+
+    out = scipy.optimize.leastsq(func=r, x0=seed_values, Dfun=J, full_output=True)
+    opt_values = out[0]
+
+    print '\nGradients:'
+    print evaluate_array(gradients, opt_values)
+    print evaluate_array(gradients, true_values)
+
+    print '\nCosts:'
+    print cost(*opt_values)
+    print cost(*true_values)
+
+    print '\nJacobian singular values:'
+    jac = J(opt_values)
+    U, S, V = np.linalg.svd(jac)
+    print S
+
+    print '\nTrue:'
+    print true_values
+
+    print '\nSeed:'
+    print seed_values
+
+    print '\nOptimized:'
+    print opt_values
+
+    print '\nError:'
+    print np.linalg.norm(opt_values - true_values)
+
+
 def main():
     np.random.seed(123)
     np.set_printoptions(precision=5, suppress=True, linewidth=300)
 
-    analyze_polynomial()
+    #analyze_polynomial()
+    analyze_polynomial2()
+
     #run_spline_epipolar()
     #run_epipolar()
     #run_sfm()
