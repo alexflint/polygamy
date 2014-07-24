@@ -9,6 +9,7 @@ import operator
 import numpy as np
 
 import unicode_rendering
+import compilation
 
 
 class OrderingError(Exception):
@@ -688,6 +689,9 @@ class Polynomial(object):
                 result.coefficients[derivative_monomial] += derivative_coef
         return result
 
+    def partial_derivatives(self):
+        return [self.partial_derivative(i) for i in range(self.num_vars)]
+
     def masked(self, mask):
         """Return a new polynomial formed by dropping each variable such
         that mask[i] evaluates to False."""
@@ -956,11 +960,7 @@ class Polynomial(object):
         polynomial quickly."""
         varnames = tuple('x'+str(i) for i in range(self.num_vars))
         expr = self.python_expression(varnames)
-        source = 'def f(%s): return %s' % (','.join(varnames), expr)
-        code = compile(source, '<polynomial>', mode='exec')
-        namespace = {}
-        exec code in namespace
-        return namespace['f']
+        return compilation.function_from_expression(expr, varnames)
 
     def python_expression(self, varnames=None):
         """Construct a representation of this polynomial as a python
@@ -1160,7 +1160,7 @@ def is_grobner_basis(G, ordering):
 #
 
 def extract_symbols(module):
-    return { node.id for node in ast.walk(module) if isinstance(node, ast.Name) }
+    return {node.id for node in ast.walk(module) if isinstance(node, ast.Name)}
 
 
 def parse(*exprs, **kwargs):
