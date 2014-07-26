@@ -42,14 +42,9 @@ def array_str(arr):
     return ss.getvalue()
 
 
-def arraymap(f, x):
-    if isinstance(x, Polynomial):
-        return f(x)
-    else:
-        try:
-            return np.array(map(lambda xi: arraymap(f, xi), x))
-        except:
-            return f(x)
+def arraymap(f, arr):
+    arr = np.asarray(arr)
+    return np.array([f(x) for x in arr.flat]).reshape(arr.shape)
 
 
 def astype(x, ctype):
@@ -58,6 +53,10 @@ def astype(x, ctype):
 
 def asfraction(x, denom_limit=None):
     return arraymap(lambda xi: Fraction(xi).limit_denominator(denom_limit), x)
+
+
+def evaluate_array(arr, *args, **kwargs):
+    return arraymap(lambda p: p(*args, **kwargs), arr)
 
 
 def flatten(x):

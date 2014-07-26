@@ -2,12 +2,13 @@ import os
 from fractions import Fraction
 
 import numpy as np
+import numpy.linalg
 import scipy.optimize
 
-from polynomial import Polynomial, parse
+from polynomial import Polynomial, parse, matrix_form
+from polynomial_io import load_polynomials, load_functions,load_solution, write_solution, write_polynomials
 from spline import evaluate_zero_offset_bezier, evaluate_zero_offset_bezier_second_deriv
-from utils import cayley, cayley_mat, cayley_denom, skew
-import compilation
+from utils import cayley, cayley_mat, cayley_denom, skew, evaluate_array
 
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d.axes3d import Axes3D
@@ -21,23 +22,11 @@ def normalized(x):
 def essential_matrix(R1, p1, R2, p2):
     Rrel = np.dot(R2, R1.T)
     prel = np.dot(R1, p2-p1)
+    return essential_matrix_from_relative_pos(Rrel, prel)
+
+
+def essential_matrix_from_relative_pos(Rrel, prel):
     return np.dot(Rrel, skew(prel))
-
-
-def epipolar():
-    np.random.rand(434)
-
-    s1, s2 = np.random.rand(2, 3)
-    R1, R2 = map(cayley, (s1, s2))
-    p1, p2 = np.random.rand(2, 3)
-
-    E = essential_matrix(R1, p1, R2, p2)
-
-    x = np.random.rand(3)
-    y1 = np.dot(R1, x-p1)
-    y2 = np.dot(R2, x-p2)
-
-    print np.dot(y2, np.dot(E, y1))
 
 
 def run_sfm():
@@ -86,11 +75,11 @@ def run_sfm():
     a_offs = x_offs + num_landmarks*3
     num_vars = a_offs + num_landmarks*num_frames
 
-    vars = [Polynomial.coordinate(i, num_vars, Fraction) for i in range(num_vars)]
-    sym_cayleys = np.reshape(vars[s_offs:s_offs+num_frames*3], (num_frames, 3))
-    sym_positions = np.reshape(vars[p_offs:p_offs+num_frames*3], (num_frames, 3))
-    sym_landmarks = np.reshape(vars[x_offs:x_offs+num_landmarks*3], (num_landmarks, 3))
-    sym_alphas = np.reshape(vars[a_offs:], (num_frames, num_landmarks))
+    sym_vars = [Polynomial.coordinate(i, num_vars, Fraction) for i in range(num_vars)]
+    sym_cayleys = np.reshape(sym_vars[s_offs:s_offs+num_frames*3], (num_frames, 3))
+    sym_positions = np.reshape(sym_vars[p_offs:p_offs+num_frames*3], (num_frames, 3))
+    sym_landmarks = np.reshape(sym_vars[x_offs:x_offs+num_landmarks*3], (num_landmarks, 3))
+    sym_alphas = np.reshape(sym_vars[a_offs:], (num_frames, num_landmarks))
 
     residuals = []
     for i in range(num_frames):
@@ -114,18 +103,18 @@ def run_sfm():
     for gi in gradient:
         print gi(*true_vars)
 
-    J = np.array([[r.partial_derivative(i)(*true_vars) for i in range(num_vars)]
+    j = np.array([[r.partial_derivative(i)(*true_vars) for i in range(num_vars)]
                   for r in residuals])
 
     print '\nJacobian singular values:'
-    print J.shape
-    U,S,V = np.linalg.svd(J)
-    print S
+    print j.shape
+    u, s, v = np.linalg.svd(j)
+    print s
 
     print '\nHessian eigenvalues:'
-    H = np.dot(J.T, J)
-    print H.shape
-    print np.linalg.eigvals(H)
+    h = np.dot(j.T, j)
+    print h.shape
+    print np.linalg.eigvals(h)
 
 
 def run_epipolar():
@@ -163,9 +152,9 @@ def run_epipolar():
     p_offs = s_offs + (num_frames-1)*3
     num_vars = p_offs + (num_frames-1)*3
 
-    vars = [Polynomial.coordinate(i, num_vars, Fraction) for i in range(num_vars)]
-    sym_cayleys = np.reshape(vars[s_offs:s_offs+(num_frames-1)*3], (num_frames-1, 3))
-    sym_positions = np.reshape(vars[p_offs:p_offs+(num_frames-1)*3], (num_frames-1, 3))
+    sym_vars = [Polynomial.coordinate(i, num_vars, Fraction) for i in range(num_vars)]
+    sym_cayleys = np.reshape(sym_vars[s_offs:s_offs+(num_frames-1)*3], (num_frames-1, 3))
+    sym_positions = np.reshape(sym_vars[p_offs:p_offs+(num_frames-1)*3], (num_frames-1, 3))
 
     true_vars = np.hstack((true_cayleys[1:].flatten(),
                            true_positions[1:].flatten()))
@@ -185,7 +174,7 @@ def run_epipolar():
             print 'Residual poly: ',len(residual), residual.total_degree
             residuals.append(residual)
 
-    print 'Num vars:',num_vars
+    print 'Num sym_vars:',num_vars
     print 'Num residuals:',len(residuals)
 
     print 'Residuals:', len(residuals)
@@ -263,9 +252,9 @@ def run_spline_epipolar():
     p_offs = s_offs + (bezier_degree-1)*3
     num_vars = p_offs + (bezier_degree-1)*3
 
-    vars = [Polynomial.coordinate(i, num_vars, Fraction) for i in range(num_vars)]
-    sym_rot_controls = np.reshape(vars[s_offs:s_offs+(bezier_degree-1)*3], (bezier_degree-1, 3))
-    sym_pos_controls = np.reshape(vars[p_offs:p_offs+(bezier_degree-1)*3], (bezier_degree-1, 3))
+    sym_vars = [Polynomial.coordinate(i, num_vars, Fraction) for i in range(num_vars)]
+    sym_rot_controls = np.reshape(sym_vars[s_offs:s_offs+(bezier_degree-1)*3], (bezier_degree-1, 3))
+    sym_pos_controls = np.reshape(sym_vars[p_offs:p_offs+(bezier_degree-1)*3], (bezier_degree-1, 3))
 
     true_vars = np.hstack((true_rot_controls.flatten(),
                            true_pos_controls.flatten()))
@@ -333,45 +322,162 @@ def run_spline_epipolar():
     print np.linalg.eigvals(H)
 
     # Output to file
-    with open(out+'/gradients.txt', 'w') as fd:
-        for gradient in gradients:
-            fd.write(gradient.format(use_superscripts=False) + ';\n')
-
-    with open(out+'/residuals.txt', 'w') as fd:
-        for residual in residuals:
-            fd.write(residual.format(use_superscripts=False) + ';\n')
-
-    with open(out+'/jacobians.txt', 'w') as fd:
-        for row in jacobians:
-            for j in row:
-                fd.write(j.format(use_superscripts=False) + ';\n')
-
-    with open(out+'/cost.txt', 'w') as fd:
-        fd.write(cost.format(use_superscripts=False) + ';\n')
-
-    with open(out+'/solution.txt', 'w') as fd:
-        for i, xi in enumerate(true_vars):
-            fd.write('x%d %.12f\n' % (i, xi))
+    write_polynomials(cost, out+'/cost.txt')
+    write_polynomials(residuals, out+'/residuals.txt')
+    write_polynomials(gradients, out+'/gradients.txt')
+    write_polynomials(jacobians, out+'/jacobians.txt')
+    write_solution(true_vars, out+'/solution.txt')
 
 
-def load_polynomials(path):
-    return parse(*[line.strip('; \n').replace('^', '**') for line in open(path)])
+def run_position_only_spline_epipolar():
+    #
+    # Construct ground truth
+    #
+    num_landmarks = 10
+    num_frames = 3
+    num_imu_readings = 8
+    bezier_degree = 4
+    out = 'out/position_only_bezier3'
 
+    print 'Num landmarks:', num_landmarks
+    print 'Num frames:', num_frames
+    print 'Num IMU readings:', num_imu_readings
+    print 'Bezier curve degree:', bezier_degree
 
-def load_functions(path, varnames):
-    return [compilation.function_from_expression(line.strip('; \n').replace('^', '**'), varnames)
-            for line in open(path)]
+    if not os.path.isdir(out):
+        os.mkdir(out)
 
+    # Both splines should start at 0,0,0
+    frame_times = np.linspace(0, .9, num_frames)
+    imu_times = np.linspace(0, 1, num_imu_readings)
 
-def load_solution(path):
-    varnames = []
-    solution = []
-    with open(path) as fd:
-        for line in fd:
-            var, value = line.strip().split()
-            varnames.append(var)
-            solution.append(float(value))
-    return varnames, np.array(solution)
+    true_rot_controls = np.random.rand(bezier_degree-1, 3)
+    true_pos_controls = np.random.rand(bezier_degree-1, 3)
+
+    true_landmarks = np.random.randn(num_landmarks, 3)
+
+    true_positions = np.array([evaluate_zero_offset_bezier(true_pos_controls, t) for t in frame_times])
+    true_cayleys = np.array([evaluate_zero_offset_bezier(true_rot_controls, t) for t in frame_times])
+    true_rotations = map(cayley, true_cayleys)
+
+    true_imu_cayleys = np.array([evaluate_zero_offset_bezier(true_rot_controls, t) for t in imu_times])
+    true_imu_rotations = map(cayley, true_imu_cayleys)
+
+    true_gravity = np.zeros(3)  # np.random.rand(3) * 9.8
+    true_accel_bias = np.random.rand(3)
+    true_global_accels = np.array([evaluate_zero_offset_bezier_second_deriv(true_pos_controls, t) for t in imu_times])
+    true_accels = [np.dot(R, a + true_gravity) + true_accel_bias
+                   for R, a in zip(true_imu_rotations, true_global_accels)]
+
+    true_uprojections = [[np.dot(R, x-p) for x in true_landmarks]
+                         for R, p in zip(true_rotations, true_positions)]
+
+    true_projections = [[normalized(zu) for zu in row] for row in true_uprojections]
+
+    #
+    # Construct symbolic versions of the above
+    #
+    position_offs = 0
+    accel_bias_offset = position_offs + (bezier_degree-1)*3
+    num_vars = accel_bias_offset + 3
+
+    sym_vars = [Polynomial.coordinate(i, num_vars, Fraction) for i in range(num_vars)]
+    sym_pos_controls = np.reshape(sym_vars[position_offs:position_offs+(bezier_degree-1)*3], (bezier_degree-1, 3))
+    sym_accel_bias = np.asarray(sym_vars[accel_bias_offset:accel_bias_offset+3])
+
+    true_vars = np.hstack((true_pos_controls.flatten(), true_accel_bias))
+
+    residuals = []
+
+    #
+    # Accel residuals
+    #
+    print '\nAccel residuals:'
+    for i in range(num_imu_readings):
+        true_R = true_imu_rotations[i]
+        sym_global_accel = evaluate_zero_offset_bezier_second_deriv(sym_pos_controls, imu_times[i])
+        sym_accel = np.dot(true_R, sym_global_accel) + sym_accel_bias
+        residual = sym_accel - true_accels[i]
+        for i in range(3):
+            print '  Degree of global accel = %d, local accel = %d, residual = %d' % \
+                  (sym_global_accel[i].total_degree, sym_accel[i].total_degree, residual[i].total_degree)
+        residuals.extend(residual)
+
+    #
+    # Epipolar residuals
+    #
+    p0 = np.zeros(3)
+    R0 = np.eye(3)
+    for i in range(1, num_frames):
+        true_s = true_cayleys[i]
+        true_R = cayley_mat(true_s)
+        sym_p = evaluate_zero_offset_bezier(sym_pos_controls, frame_times[i])
+        sym_E = essential_matrix(R0, p0, true_R, sym_p)
+        for j in range(num_landmarks):
+            z = true_projections[i][j]
+            z0 = true_projections[0][j]
+            residual = np.dot(z, np.dot(sym_E, z0))
+            residuals.append(residual)
+
+    print '\nNum vars:', num_vars
+    print 'Num residuals:', len(residuals)
+
+    print '\nResiduals:', len(residuals)
+    cost = Polynomial(num_vars)
+    for r in residuals:
+        cost += r*r
+        print '  %f   (degree=%d, length=%d)' % (r(*true_vars), r.total_degree, len(r))
+
+    print '\nCost:'
+    print '  Num terms: %d' % len(cost)
+    print '  Degree: %d' % cost.total_degree
+    for term in cost:
+        print '    ',term
+
+    print '\nGradients:'
+    gradients = cost.partial_derivatives()
+    for gradient in gradients:
+        print '  %d  (degree=%d, length=%d)' % (gradient(*true_vars), gradient.total_degree, len(gradient))
+
+    jacobians = np.array([r.partial_derivatives() for r in residuals])
+
+    J = evaluate_array(jacobians, *true_vars)
+
+    U, S, V = np.linalg.svd(J)
+
+    print '\nJacobian singular values:'
+    print J.shape
+    print S
+
+    print '\nHessian eigenvalues:'
+    H = np.dot(J.T, J)
+    print H.shape
+    print np.linalg.eigvals(H)
+
+    null_space_dims = sum(np.abs(S) < 1e-5)
+    print '\nNull space dimensions:', null_space_dims
+    if null_space_dims > 0:
+        for i in null_space_dims:
+            print '  ',V[-i]
+
+    coordinate_monomials = [list(var.monomials)[0] for var in sym_vars]
+    null_monomial = (0,) * num_vars
+    A, _ = matrix_form(gradients, coordinate_monomials)
+    b, _ = matrix_form(gradients, [null_monomial])
+    x = np.squeeze(numpy.linalg.solve(A, -b))
+
+    print '\nEstimated:'
+    print x
+
+    print '\nGround truth:'
+    print true_vars
+
+    # Output to file
+    write_polynomials(cost, out+'/cost.txt')
+    write_polynomials(residuals, out+'/residuals.txt')
+    write_polynomials(gradients, out+'/gradients.txt')
+    write_polynomials(jacobians.flat, out+'/jacobians.txt')
+    write_solution(true_vars, out+'/solution.txt')
 
 
 def analyze_polynomial():
@@ -381,11 +487,6 @@ def analyze_polynomial():
 
     assert isinstance(cost, Polynomial)
     print len(cost), cost.total_degree
-
-
-def evaluate_array(arr, x):
-    arr = np.asarray(arr)
-    return np.array([a(*x) for a in arr.flat]).reshape(arr.shape)
 
 
 def analyze_polynomial2():
@@ -401,11 +502,11 @@ def analyze_polynomial2():
 
     def J(x):
         print ' ... jacobian'
-        return evaluate_array(jacobians, x)
+        return evaluate_array(jacobians, *x)
 
     def r(x):
         print ' ... residual'
-        return evaluate_array(residuals, x)
+        return evaluate_array(residuals, *x)
 
     np.random.seed(765)
     seed_values = true_values + np.random.rand(len(true_values)) * 100
@@ -414,8 +515,8 @@ def analyze_polynomial2():
     opt_values = out[0]
 
     print '\nGradients:'
-    print evaluate_array(gradients, opt_values)
-    print evaluate_array(gradients, true_values)
+    print evaluate_array(gradients, *opt_values)
+    print evaluate_array(gradients, *true_values)
 
     print '\nCosts:'
     print cost(*opt_values)
@@ -462,12 +563,12 @@ def analyze_polynomial2():
     # introducing gyro measurements.
     #
     # TODO:
-    #  - add accel bias
+    #  - [done] add accel bias
     #  - add gravity
-    #  - add gyro bias and gyro measurements
+    #  - [ignore] add gyro bias and gyro measurements
     #    - may need to solve for gyro bias separately
     #  - investigate noise
-    #  - investigate normalization
+    #  - investigate normalization of data
     #  - add camera/imu rotation
     #
     #
@@ -477,12 +578,14 @@ def main():
     np.random.seed(123)
     np.set_printoptions(precision=5, suppress=True, linewidth=300)
 
-    #analyze_polynomial()
-    analyze_polynomial2()
-
-    #run_spline_epipolar()
-    #run_epipolar()
     #run_sfm()
+    #run_epipolar()
+    #run_spline_epipolar()
+    run_position_only_spline_epipolar()
+
+    #analyze_polynomial()
+    #analyze_polynomial2()
+
 
 def profile_main():
     import cProfile, pstats

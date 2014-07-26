@@ -1059,10 +1059,8 @@ def matrix_form(F, ordering=None):
         monomials = sorted(monomials, key=lambda monomial: ComparableTerm(ordering, Term(1,monomial)))
     elif ordering is not None:
         monomials = ordering
-    else:
-        monomials = list(set(*(f.monomials for f in F)))
-    X = [ as_polynomial(monomial, F[0].num_vars) for monomial in monomials ]
-    C = np.asarray([[ f.coefficients[monomial] for monomial in monomials ] for f in F])
+    X = [as_polynomial(monomial, F[0].num_vars) for monomial in monomials]
+    C = np.asarray([[f.coefficients[monomial] for monomial in monomials] for f in F])
     return C, X
 
 
