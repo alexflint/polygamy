@@ -9,6 +9,10 @@ from spline import evaluate_zero_offset_bezier, evaluate_zero_offset_bezier_seco
 from utils import cayley, cayley_mat, cayley_denom, skew
 import compilation
 
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d.axes3d import Axes3D
+
+
 def normalized(x):
     x = np.asarray(x)
     return x / np.linalg.norm(x)
@@ -433,6 +437,40 @@ def analyze_polynomial2():
 
     print '\nError:'
     print np.linalg.norm(opt_values - true_values)
+
+    true_pcontrols = true_values[:6].reshape((-1, 3))
+    opt_pcontrols = opt_values[:6].reshape((-1, 3))
+
+    fig = plt.figure(figsize=(14,6))
+    ax = fig.add_subplot(1, 2, 1, projection='3d')
+
+    ts = np.linspace(0, 1, 100)
+    true_ps = np.array([evaluate_zero_offset_bezier(true_pcontrols, t) for t in ts])
+    opt_ps = np.array([evaluate_zero_offset_bezier(opt_pcontrols, t) for t in ts])
+
+    ax.plot(true_ps[:,0], true_ps[:,1], true_ps[:,2], '-b')
+    ax.plot(opt_ps[:,0], opt_ps[:,1], opt_ps[:,2], '-r')
+
+    plt.show()
+
+    #
+    #
+    #
+    # I believe the other solution corresponds to a trajectory with the exact same
+    # set of positions but where the second and third keyframes are rotated as
+    # per the "four possible epipolar solutions". This should be fixed by
+    # introducing gyro measurements.
+    #
+    # TODO:
+    #  - add accel bias
+    #  - add gravity
+    #  - add gyro bias and gyro measurements
+    #    - may need to solve for gyro bias separately
+    #  - investigate noise
+    #  - investigate normalization
+    #  - add camera/imu rotation
+    #
+    #
 
 
 def main():
