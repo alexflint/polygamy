@@ -1,12 +1,12 @@
 import os
 from fractions import Fraction
+
 import numpy as np
 import scipy.optimize
 
 from polynomial import Polynomial, parse
-from spline import evaluate_bezier, evaluate_bezier_second_deriv
-
-from scripts.utils import cayley, cayley_mat, cayley_denom, skew
+from spline import evaluate_zero_offset_bezier, evaluate_zero_offset_bezier_second_deriv
+from utils import cayley, cayley_mat, cayley_denom, skew
 import compilation
 
 def normalized(x):
@@ -209,18 +209,6 @@ def run_epipolar():
     H = np.dot(J.T, J)
     print H.shape
     print np.linalg.eigvals(H)
-
-
-def evaluate_zero_offset_bezier(params, t):
-    if t == 0:
-        # should return a numpy array for t=0, not a Polynomial
-        return np.zeros(len(params[0]))
-    else:
-        return evaluate_bezier(np.vstack((np.zeros(len(params[0])), params)), t)
-
-
-def evaluate_zero_offset_bezier_second_deriv(params, t):
-    return evaluate_bezier_second_deriv(np.vstack((np.zeros(len(params[0])), params)), t)
 
 
 def run_spline_epipolar():

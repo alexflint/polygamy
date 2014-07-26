@@ -2,21 +2,14 @@ import StringIO
 from fractions import Fraction
 import numpy as np
 
-from polynomial import Polynomial, polynomial_jacobian
+from polynomial import Polynomial
 
 
 def skew(m):
     m = np.asarray(m)
-    return np.array([[ 0.,   -m[2],  m[1]],
-                     [ m[2],  0.,   -m[0]],
-                     [-m[1],  m[0],  0.  ]])
-
-
-def is_squarefree(fs, zeros):
-    J = polynomial_jacobian(fs)
-    for zero in zeros:
-        Jcur = J(*zero)
-        print Jcur
+    return np.array([[0.,    -m[2],  m[1]],
+                     [m[2],   0.,   -m[0]],
+                     [-m[1],  m[0],    0.]])
 
 
 def array_str(arr):
@@ -35,11 +28,11 @@ def array_str(arr):
 
     ss = StringIO.StringIO()
     ss.write('[')
-    for i,rowstrings in enumerate(strings):
+    for i, rowstrings in enumerate(strings):
         if i > 0:
             ss.write('\n ')
         ss.write('[')
-        for j,s in enumerate(rowstrings):
+        for j, s in enumerate(rowstrings):
             if j > 0:
                 ss.write('  ')
             ss.write(s)
@@ -51,7 +44,7 @@ def array_str(arr):
 
 def arraymap(f, x):
     if isinstance(x, Polynomial):
-         return f(x)
+        return f(x)
     else:
         try:
             return np.array(map(lambda xi: arraymap(f, xi), x))
@@ -68,24 +61,24 @@ def asfraction(x, denom_limit=None):
 
 
 def flatten(x):
-    L = []
+    flat = []
     for xi in x:
         if isinstance(xi, Polynomial):
-            L.append(xi)
+            flat.append(xi)
         else:
             try:
-                L.extend(xi)
-            except:
-                L.append(xi)
-    return L
+                flat.extend(xi)
+            except TypeError:
+                flat.append(xi)
+    return flat
 
 
 def cayley_mat(s):
-    return np.eye(3) * (1. - np.dot(s,s)) + 2.*skew(s) + 2.*np.outer(s,s)
+    return np.eye(3) * (1. - np.dot(s, s)) + 2.*skew(s) + 2.*np.outer(s, s)
 
 
 def cayley_denom(s):
-    return 1. + np.dot(s,s)
+    return 1. + np.dot(s, s)
 
 
 def cayley(s):
