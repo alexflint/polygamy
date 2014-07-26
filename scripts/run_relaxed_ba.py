@@ -9,6 +9,7 @@ from polynomial import Polynomial, matrix_form, quadratic_form
 from polynomial_io import load_polynomials, load_functions,load_solution, write_solution, write_polynomials
 from spline import evaluate_zero_offset_bezier, evaluate_zero_offset_bezier_second_deriv
 from utils import cayley, cayley_mat, cayley_denom, skew, evaluate_array
+from lie import SO3
 
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d.axes3d import Axes3D
@@ -494,8 +495,8 @@ def run_position_only_spline_epipolar_simplified():
     #
     # Construct ground truth
     #
-    num_landmarks = 50
     num_frames = 4
+    num_landmarks = 50
     num_imu_readings = 80
     bezier_degree = 4
     out = 'out/position_only_bezier3'
@@ -540,13 +541,22 @@ def run_position_only_spline_epipolar_simplified():
     # Add sensor noise
     #
 
-    accel_noise = 0
-    feature_noise = .001
+    accel_noise = 0.1
+    feature_noise = 0.01
+    orientation_noise = 0.01
 
     observed_frame_orientations = true_frame_orientations.copy()
     observed_imu_orientations = true_imu_orientations.copy()
     observed_features = true_features.copy()
     observed_accels = true_accels.copy()
+
+    if orientation_noise > 0:
+        for i, R in enumerate(observed_frame_orientations):
+            R_noise = SO3.exp(np.random.randn(3)*orientation_noise)
+            observed_frame_orientations[i] = np.dot(R_noise, R)
+        for i, R in enumerate(observed_imu_orientations):
+            R_noise = SO3.exp(np.random.randn(3)*orientation_noise)
+            observed_imu_orientations[i] = np.dot(R_noise, R)
 
     if accel_noise > 0:
         observed_accels += np.random.randn(*observed_accels.shape) * accel_noise
@@ -641,7 +651,7 @@ def run_position_only_spline_epipolar_simplified():
     print 'Accel bias error:', np.linalg.norm(estimated_accel_bias - true_accel_bias)
     print 'Gravity error:', np.linalg.norm(estimated_gravity - true_gravity)
     for i in range(num_frames):
-        print '  Frame %d error: %f' % (i, np.linalg.norm(estimated_positions[i] - true_frame_positions[i]))
+        print 'Frame %d error: %f' % (i, np.linalg.norm(estimated_positions[i] - true_frame_positions[i]))
 
     fig = plt.figure(figsize=(14,6))
     ax = fig.add_subplot(1, 2, 1, projection='3d')
@@ -686,7 +696,6 @@ def analyze_polynomial2():
         print ' ... residual'
         return evaluate_array(residuals, *x)
 
-    np.random.seed(765)
     seed_values = true_values + np.random.rand(len(true_values)) * 100
 
     out = scipy.optimize.leastsq(func=r, x0=seed_values, Dfun=J, full_output=True)
@@ -753,7 +762,7 @@ def analyze_polynomial2():
 
 
 def main():
-    np.random.seed(123)
+    np.random.seed(1123)
     np.set_printoptions(precision=5, suppress=True, linewidth=300)
 
     #run_sfm()
