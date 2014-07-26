@@ -1064,6 +1064,28 @@ def matrix_form(F, ordering=None):
     return C, X
 
 
+def quadratic_form(polynomial):
+    """Construct a matrix A, a vector c, and a constant k such that
+    p(x) = x'*A*x + c'*x + k"""
+    assert polynomial.total_degree <= 2
+    nv = polynomial.num_vars
+
+    A = np.zeros((nv, nv))
+    c = np.zeros(nv)
+    k = polynomial.coefficients[(0,)*nv]
+
+    for i in range(nv):
+        xi = tuple(int(k==i) for k in range(nv))
+        xixi = tuple(int(k==i)*2 for k in range(nv))
+        c[i] = polynomial.coefficients[xi]
+        A[i,i] = polynomial.coefficients[xixi]
+        for j in range(i):
+            xixj = tuple(int(k==i or k==j) for k in range(nv))
+            A[i,j] = A[j,i] = polynomial.coefficients[xixj] * .5
+
+    return A, c, k
+
+
 #
 # Operations for ideals
 #

@@ -1,15 +1,20 @@
 from __future__ import division
 
 import unittest
+import numpy as np
+import numpy.testing
 
 from polynomial import *
 from modulo import ModuloInteger
 
+
 def first(xs):
     return iter(xs).next()
 
+
 class TermTest(unittest.TestCase):
     pass
+
 
 class PolynomialTest(unittest.TestCase):
     def test_constructor(self):
@@ -174,6 +179,22 @@ class PolynomialTest(unittest.TestCase):
         f, g, h = parse('x+y', '2*x**2', '4*x**4 + x**2 + 2*x*y + y**2')
         v = np.array([f, g])
         self.assertEqual(np.dot(v,v), h)
+
+    def test_quadratic_form(self):
+        np.random.seed(123)
+        sym_vars = np.array([Polynomial.coordinate(i, 4) for i in range(4)])
+
+        k = float(np.random.randint(0, 10))
+        c = np.random.randint(0, 10, size=4).astype(float)
+        A = np.random.randint(0, 10, size=(4, 4)).astype(float)
+        A = A + A.T
+
+        p = np.dot(sym_vars, np.dot(A, sym_vars)) + np.dot(c, sym_vars) + k
+        AA, cc, kk = quadratic_form(p)
+
+        numpy.testing.assert_array_almost_equal(A, AA)
+        numpy.testing.assert_array_almost_equal(c, cc)
+        numpy.testing.assert_array_almost_equal(k, kk)
 
 
 class IdealTest(unittest.TestCase):
