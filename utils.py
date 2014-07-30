@@ -82,3 +82,18 @@ def cayley_denom(s):
 
 def cayley(s):
     return cayley_mat(s) / cayley_denom(s)
+
+
+def normalized(x):
+    x = np.asarray(x)
+    return x / np.linalg.norm(x)
+
+
+def essential_matrix(R1, p1, R2, p2):
+    Rrel = np.dot(R2, R1.T)
+    prel = np.dot(R1, p2-p1)
+    return essential_matrix_from_relative_pose(Rrel, prel)
+
+
+def essential_matrix_from_relative_pose(Rrel, prel):
+    return np.dot(Rrel, skew(prel))
