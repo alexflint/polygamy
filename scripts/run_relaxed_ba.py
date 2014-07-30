@@ -339,6 +339,8 @@ def run_spline_epipolar():
         for i, xi in enumerate(true_vars):
             fd.write('x%d %.12f\n' % (i, xi))
 
+    with open('out/epipolar_accel_bezier3_cost.txt', 'w') as fd:
+        fd.write(cost.format(use_superscripts=False, compact=True) + ';\n')
 
 
 def main():
