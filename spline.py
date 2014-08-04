@@ -16,34 +16,55 @@ def bezier_coefs(t, order):
 
 
 def bezier_deriv(params, t):
-    if len(params) == 1:
-        return 0.
+    return np.dot(bezier_deriv_coefs(t, len(params)-1), params)
+
+
+def bezier_deriv_coefs(t, order):
+    if order == 0:
+        return np.array([1.])
     else:
-        a = bezier(params[:-1], t)
-        b = bezier(params[1:], t)
-        aderiv = bezier_deriv(params[:-1], t)
-        bderiv = bezier_deriv(params[1:], t)
-        return aderiv*(1.-t) + bderiv*t - a + b
+        c = bezier_coefs(t, order-1)
+        dc = bezier_deriv_coefs(t, order-1)
+        return np.hstack((dc, 0))*(1.-t) + np.hstack((0, dc))*t - np.hstack((c, 0)) + np.hstack((0, c))
 
 
 def bezier_second_deriv(params, t):
-    if len(params) == 1:
-        return 0.
+    return np.dot(bezier_second_deriv_coefs(t, len(params)-1), params)
+
+
+def bezier_second_deriv_coefs(t, order):
+    if order == 0:
+        return np.array([1.])
     else:
-        aderiv = bezier_deriv(params[:-1], t)
-        bderiv = bezier_deriv(params[1:], t)
-        aderiv2 = bezier_second_deriv(params[:-1], t)
-        bderiv2 = bezier_second_deriv(params[1:], t)
-        return aderiv2*(1.-t) + bderiv2*t - aderiv*2. + bderiv*2.
+        dc = bezier_deriv_coefs(t, order-1)
+        ddc = bezier_second_deriv_coefs(t, order-1)
+        return np.hstack((ddc, 0))*(1.-t) + np.hstack((0, ddc))*t - np.hstack((dc, 0))*2 + np.hstack((0, dc))*2
+
+
+def repeat_diag(x, k):
+    x = np.asarray(x)
+    return np.kron(np.eye(k, dtype=x.dtype), x)
 
 
 def zero_offset_bezier(params, t):
-    if t == 0:
-        # should return a numpy array for t=0, not a Polynomial
-        return np.zeros_like(params[0])
-    else:
-        return bezier(np.vstack((np.zeros(len(params[0])), params)), t)
+    return np.dot(zero_offset_bezier_coefs(t, len(params)), params)
+
+
+def zero_offset_bezier_coefs(t, order):
+    return bezier_coefs(t, order)[1:]
+
+
+def zero_offset_bezier_mat(t, order, ndims):
+    return repeat_diag(zero_offset_bezier_coefs(t, order), ndims)
 
 
 def zero_offset_bezier_second_deriv(params, t):
-    return bezier_second_deriv(np.vstack((np.zeros(len(params[0])), params)), t)
+    return np.dot(zero_offset_bezier_second_deriv_coefs(t, len(params)), params)
+
+
+def zero_offset_bezier_second_deriv_coefs(t, order):
+    return bezier_second_deriv_coefs(t, order)[1:]
+
+
+def zero_offset_bezier_second_deriv_mat(t, order, ndims):
+    return repeat_diag(zero_offset_bezier_second_deriv_coefs(t, order), ndims)
