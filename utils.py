@@ -6,10 +6,24 @@ from polynomial import Polynomial
 
 
 def skew(m):
-    m = np.asarray(m)
-    return np.array([[0.,    -m[2],  m[1]],
-                     [m[2],   0.,   -m[0]],
-                     [-m[1],  m[0],    0.]])
+    """Return the matrix form of the cross product for the 3-vector m."""
+    m0, m1, m2 = m
+    return np.array([[0.,  -m2,  m1],
+                     [m2,   0., -m0],
+                     [-m1,  m0,  0.]])
+
+
+def skew_jacobian():
+    """Return the jacobian of flatten(skew(x)) with respect to x."""
+    return np.array([[0,  0,  0],
+                     [0,  0, -1],
+                     [0,  1,  0],
+                     [0,  0,  1],
+                     [0,  0,  0],
+                     [-1, 0,  0],
+                     [0, -1,  0],
+                     [1,  0,  0],
+                     [0,  0,  0]])
 
 
 def array_str(arr):
