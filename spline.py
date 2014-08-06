@@ -21,7 +21,7 @@ def bezier_deriv(params, t):
 
 def bezier_deriv_coefs(t, order):
     if order == 0:
-        return np.array([1.])
+        return np.array([0.])
     else:
         c = bezier_coefs(t, order-1)
         dc = bezier_deriv_coefs(t, order-1)
@@ -34,7 +34,7 @@ def bezier_second_deriv(params, t):
 
 def bezier_second_deriv_coefs(t, order):
     if order == 0:
-        return np.array([1.])
+        return np.array([0.])
     else:
         dc = bezier_deriv_coefs(t, order-1)
         ddc = bezier_second_deriv_coefs(t, order-1)
@@ -42,8 +42,7 @@ def bezier_second_deriv_coefs(t, order):
 
 
 def repeat_diag(x, k):
-    x = np.asarray(x)
-    return np.kron(np.eye(k, dtype=x.dtype), x)
+    return np.hstack([np.eye(k, dtype=x.dtype) * xi for xi in x])
 
 
 def zero_offset_bezier(params, t):

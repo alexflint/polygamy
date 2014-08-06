@@ -111,11 +111,11 @@ def main():
     s_controls = params[5:9]
     landmarks = [params[9+i*3:9+i*3+3] for i in range(0, num_landmarks)]
 
-    p = evaluate_bezier(p_controls, time)
+    p = bezier(p_controls, time)
     v = p.partial_derivative(0)
     a = v.partial_derivative(0)
 
-    s = evaluate_bezier(s_controls, time)
+    s = bezier(s_controls, time)
     
     # Sample ground truth
     true_times = [ Fraction(1,8), Fraction(4,8), Fraction(6,8), Fraction(7,8), Fraction(5,8) ]
