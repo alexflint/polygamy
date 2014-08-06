@@ -9,7 +9,7 @@ from mpl_toolkits.mplot3d.axes3d import Axes3D
 
 from polynomial import Polynomial, matrix_form, quadratic_form
 from polynomial_io import load_polynomials, load_functions,load_solution, write_solution, write_polynomials
-from spline import evaluate_zero_offset_bezier, evaluate_zero_offset_bezier_second_deriv
+from spline import zero_offset_bezier, zero_offset_bezier_second_deriv
 from utils import cayley, cayley_mat, cayley_denom, evaluate_array, essential_matrix, normalized
 from lie import SO3
 
@@ -208,10 +208,10 @@ def run_spline_epipolar():
     true_pos_controls = np.random.rand(bezier_degree-1, 3)
 
     true_landmarks = np.random.randn(num_landmarks, 3)
-    true_cayleys = np.array([evaluate_zero_offset_bezier(true_rot_controls, t) for t in frame_times])
-    true_positions = np.array([evaluate_zero_offset_bezier(true_pos_controls, t) for t in frame_times])
+    true_cayleys = np.array([zero_offset_bezier(true_rot_controls, t) for t in frame_times])
+    true_positions = np.array([zero_offset_bezier(true_pos_controls, t) for t in frame_times])
 
-    true_accels = np.array([evaluate_zero_offset_bezier_second_deriv(true_pos_controls, t) for t in imu_times])
+    true_accels = np.array([zero_offset_bezier_second_deriv(true_pos_controls, t) for t in imu_times])
 
     true_qs = map(cayley_mat, true_cayleys)
     true_rotations = map(cayley, true_cayleys)
@@ -248,7 +248,7 @@ def run_spline_epipolar():
 
     # Accel residuals
     for i in range(num_imu_readings):
-        sym_a = evaluate_zero_offset_bezier_second_deriv(sym_pos_controls, imu_times[i])
+        sym_a = zero_offset_bezier_second_deriv(sym_pos_controls, imu_times[i])
         residual = sym_a - true_accels[i]
         residuals.extend(residual)
 
@@ -256,8 +256,8 @@ def run_spline_epipolar():
     p0 = np.zeros(3)
     R0 = np.eye(3)
     for i in range(1, num_frames):
-        sym_s = evaluate_zero_offset_bezier(sym_rot_controls, frame_times[i])
-        sym_p = evaluate_zero_offset_bezier(sym_pos_controls, frame_times[i])
+        sym_s = zero_offset_bezier(sym_rot_controls, frame_times[i])
+        sym_p = zero_offset_bezier(sym_pos_controls, frame_times[i])
         sym_q = cayley_mat(sym_s)
         #sym_q = np.eye(3) * (1. - np.dot(sym_s, sym_s)) + 2.*skew(sym_s) + 2.*np.outer(sym_s, sym_s)
         sym_E = essential_matrix(R0, p0, sym_q, sym_p)
@@ -341,16 +341,16 @@ def run_position_only_spline_epipolar():
 
     true_landmarks = np.random.randn(num_landmarks, 3)
 
-    true_positions = np.array([evaluate_zero_offset_bezier(true_pos_controls, t) for t in frame_times])
-    true_cayleys = np.array([evaluate_zero_offset_bezier(true_rot_controls, t) for t in frame_times])
+    true_positions = np.array([zero_offset_bezier(true_pos_controls, t) for t in frame_times])
+    true_cayleys = np.array([zero_offset_bezier(true_rot_controls, t) for t in frame_times])
     true_rotations = map(cayley, true_cayleys)
 
-    true_imu_cayleys = np.array([evaluate_zero_offset_bezier(true_rot_controls, t) for t in imu_times])
+    true_imu_cayleys = np.array([zero_offset_bezier(true_rot_controls, t) for t in imu_times])
     true_imu_rotations = map(cayley, true_imu_cayleys)
 
     true_gravity = normalized(np.random.rand(3)) * 9.8
     true_accel_bias = np.random.rand(3)
-    true_global_accels = np.array([evaluate_zero_offset_bezier_second_deriv(true_pos_controls, t) for t in imu_times])
+    true_global_accels = np.array([zero_offset_bezier_second_deriv(true_pos_controls, t) for t in imu_times])
     true_accels = [np.dot(R, a + true_gravity) + true_accel_bias
                    for R, a in zip(true_imu_rotations, true_global_accels)]
 
@@ -383,7 +383,7 @@ def run_position_only_spline_epipolar():
     print '\nAccel residuals:'
     for i in range(num_imu_readings):
         true_R = true_imu_rotations[i]
-        sym_global_accel = evaluate_zero_offset_bezier_second_deriv(sym_pos_controls, imu_times[i])
+        sym_global_accel = zero_offset_bezier_second_deriv(sym_pos_controls, imu_times[i])
         sym_accel = np.dot(true_R, sym_global_accel + sym_gravity) + sym_accel_bias
         residual = sym_accel - true_accels[i]
         for i in range(3):
@@ -399,7 +399,7 @@ def run_position_only_spline_epipolar():
     for i in range(1, num_frames):
         true_s = true_cayleys[i]
         true_R = cayley_mat(true_s)
-        sym_p = evaluate_zero_offset_bezier(sym_pos_controls, frame_times[i])
+        sym_p = zero_offset_bezier(sym_pos_controls, frame_times[i])
         sym_E = essential_matrix(R0, p0, true_R, sym_p)
         for j in range(num_landmarks):
             z = true_projections[i][j]
@@ -540,8 +540,8 @@ def analyze_polynomial2():
     ax = fig.add_subplot(1, 2, 1, projection='3d')
 
     ts = np.linspace(0, 1, 100)
-    true_ps = np.array([evaluate_zero_offset_bezier(true_pcontrols, t) for t in ts])
-    opt_ps = np.array([evaluate_zero_offset_bezier(opt_pcontrols, t) for t in ts])
+    true_ps = np.array([zero_offset_bezier(true_pcontrols, t) for t in ts])
+    opt_ps = np.array([zero_offset_bezier(opt_pcontrols, t) for t in ts])
 
     ax.plot(true_ps[:,0], true_ps[:,1], true_ps[:,2], '-b')
     ax.plot(opt_ps[:,0], opt_ps[:,1], opt_ps[:,2], '-r')
