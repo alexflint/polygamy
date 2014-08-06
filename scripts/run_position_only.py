@@ -99,7 +99,7 @@ def dots(*args):
     return reduce(np.dot, args)
 
 
-def accel_residual(pos_controls, gravity, accel_bias,
+def accel_residual(pos_controls, accel_bias, gravity,
                    timestamp, accel_reading, orientation):
     global_accel = spline.zero_offset_bezier_second_deriv(pos_controls, timestamp)
     apparent_accel = np.dot(orientation, global_accel + gravity) + accel_bias
@@ -108,13 +108,18 @@ def accel_residual(pos_controls, gravity, accel_bias,
 
 def accel_jacobian(bezier_order, timestamp, orientation):
     bezier_mat = spline.zero_offset_bezier_second_deriv_mat(timestamp, bezier_order, 3)
-    return np.hstack((np.dot(orientation, bezier_mat), orientation, np.eye(3)))
+    return np.hstack((np.dot(orientation, bezier_mat), np.eye(3), orientation))
 
 
-def evaluate_accel_residuals(pos_controls, gravity, accel_bias,
+def evaluate_accel_residuals(pos_controls, accel_bias, gravity,
                              accel_timestamps, accel_readings, accel_orientations):
-    return np.array([accel_residual(pos_controls, gravity, accel_bias, t, accel, R)
+    return np.hstack([accel_residual(pos_controls, accel_bias, gravity, t, accel, R)
                      for t, R, accel in zip(accel_timestamps, accel_orientations, accel_readings)])
+
+
+def evaluate_accel_jacobians(bezier_order, accel_timestamps, accel_orientations):
+    return np.vstack([accel_jacobian(bezier_order, t, R)
+                      for t, R in zip(accel_timestamps, accel_orientations)])
 
 
 def epipolar_residual(pos_controls, ti, tj, zi, zj, Ri, Rj):
@@ -146,6 +151,20 @@ def evaluate_epipolar_residuals(pos_controls, frame_timestamps, frame_orientatio
     return np.array(residuals)
 
 
+def evaluate_epipolar_jacobians(bezier_order, frame_timestamps, frame_orientations,
+                                features, feature_mask=None):
+    jacobians = []
+    for i, (ti, Ri) in enumerate(zip(frame_timestamps, frame_orientations)):
+        for j, (tj, Rj) in enumerate(zip(frame_timestamps, frame_orientations)):
+            if i != j:
+                for k in range(features.shape[1]):
+                    if feature_mask is None or (feature_mask[i, k] and feature_mask[i, j]):
+                        zi = features[i][k]
+                        zj = features[j][k]
+                        jacobians.append(epipolar_jacobian(bezier_order, ti, tj, zi, zj, Ri, Rj))
+    return np.array(jacobians)
+
+
 def run_accel_finite_differences():
     np.random.seed(0)
 
@@ -161,8 +180,8 @@ def run_accel_finite_differences():
         k = bezier_order * 3
         assert len(delta) == k + 6
         return accel_residual(pos_controls + delta[:k].reshape((bezier_order, 3)),
-                              gravity + delta[k:k+3],
-                              accel_bias + delta[k+3:k+6],
+                              accel_bias + delta[k:k],
+                              gravity + delta[k+3:k+6],
                               t,
                               a,
                               R)
@@ -304,7 +323,7 @@ def run_simulation():
 
     epipolar_residuals = evaluate_epipolar_residuals(sym_pos_controls, frame_times,
                                                      observed_frame_orientations, observed_features)
-    accel_residuals = evaluate_accel_residuals(sym_pos_controls, sym_gravity, sym_accel_bias,
+    accel_residuals = evaluate_accel_residuals(sym_pos_controls, sym_accel_bias, sym_gravity,
                                                imu_times, observed_accels, observed_imu_orientations)
 
     residuals = np.hstack((accel_residuals, epipolar_residuals))
@@ -389,7 +408,7 @@ def run_simulation_nonsymbolic():
 
     # Both splines should start at 0,0,0
     frame_times = np.linspace(0, .9, num_frames)
-    imu_times = np.linspace(0, 1, num_imu_readings)
+    accel_timestamps = np.linspace(0, 1, num_imu_readings)
 
     true_rot_controls = np.random.randn(bezier_degree-1, 3)
     true_pos_controls = np.random.randn(bezier_degree-1, 3)
@@ -400,13 +419,13 @@ def run_simulation_nonsymbolic():
     true_frame_orientations = np.array(map(cayley, true_frame_cayleys))
     true_frame_positions = np.array([spline.zero_offset_bezier(true_pos_controls, t) for t in frame_times])
 
-    true_imu_cayleys = np.array([spline.zero_offset_bezier(true_rot_controls, t) for t in imu_times])
+    true_imu_cayleys = np.array([spline.zero_offset_bezier(true_rot_controls, t) for t in accel_timestamps])
     true_imu_orientations = np.array(map(cayley, true_imu_cayleys))
 
     true_gravity_magnitude = 9.8
     true_gravity = normalized(np.random.rand(3)) * true_gravity_magnitude
     true_accel_bias = np.random.randn(3)
-    true_global_accels = np.array([spline.zero_offset_bezier_second_deriv(true_pos_controls, t) for t in imu_times])
+    true_global_accels = np.array([spline.zero_offset_bezier_second_deriv(true_pos_controls, t) for t in accel_timestamps])
     true_accels = np.array([np.dot(R, a + true_gravity) + true_accel_bias
                             for R, a in zip(true_imu_orientations, true_global_accels)])
 
@@ -443,50 +462,41 @@ def run_simulation_nonsymbolic():
     if feature_noise > 0:
         observed_features += np.random.rand(*observed_features.shape) * feature_noise
 
-    #
-    # Construct symbolic versions of the above
-    #
     position_offs = 0
     accel_bias_offset = position_offs + (bezier_degree-1)*3
     gravity_offset = accel_bias_offset + 3
-    num_vars = gravity_offset + 3
-
-    sym_vars = [Polynomial.coordinate(i, num_vars, Fraction) for i in range(num_vars)]
-    sym_pos_controls = np.reshape(sym_vars[position_offs:position_offs+(bezier_degree-1)*3], (bezier_degree-1, 3))
-    sym_accel_bias = np.asarray(sym_vars[accel_bias_offset:accel_bias_offset+3])
-    sym_gravity = np.asarray(sym_vars[gravity_offset:gravity_offset+3])
 
     true_vars = np.hstack((true_pos_controls.flatten(), true_accel_bias, true_gravity))
-    assert len(true_vars) == len(sym_vars)
 
     #
-    # Compute residuals
+    # Compute system non-symbolically
     #
 
-    accel_residuals = evaluate_accel_residuals(sym_pos_controls, sym_gravity, sym_accel_bias,
-                                               imu_times, observed_accels, observed_imu_orientations)
-    epipolar_residuals = evaluate_epipolar_residuals(sym_pos_controls, frame_times,
-                                                     observed_frame_orientations, observed_features)
-    residuals = np.hstack((accel_residuals, epipolar_residuals))
+    accel_r = evaluate_accel_residuals(np.zeros((bezier_degree-1, 3)), np.zeros(3), np.zeros(3),
+                                       accel_timestamps, observed_accels, observed_imu_orientations)
+    accel_j = evaluate_accel_jacobians(bezier_degree-1, accel_timestamps, observed_imu_orientations)
 
-    print '\nNum vars:', num_vars
-    print 'Num residuals:', len(residuals)
+    epipolar_r = evaluate_epipolar_residuals(np.zeros((bezier_degree-1, 3)), frame_times,
+                                             observed_frame_orientations, observed_features)
+    epipolar_j = evaluate_epipolar_jacobians(bezier_degree-1, frame_times,
+                                             observed_frame_orientations, observed_features)
+    epipolar_j = np.hstack((epipolar_j, np.zeros((epipolar_j.shape[0], 6))))
 
-    print '\nResiduals:', len(residuals)
-    cost = Polynomial(num_vars)
-    for r in residuals:
-        cost += r*r
-        print '  %f   (degree=%d, length=%d)' % (r(*true_vars), r.total_degree, len(r))
+    residual = np.hstack((accel_r, epipolar_r))
+    jacobian = np.vstack((accel_j, epipolar_j))
 
-    print '\nCost:'
-    print '  Num terms: %d' % len(cost)
-    print '  Degree: %d' % cost.total_degree
-
+    #
     # Solve
-    A, b, k = quadratic_form(cost)
-    A *= 2
+    #
 
-    estimated_vars = np.squeeze(np.linalg.solve(A, -b))
+    JtJ = np.dot(jacobian.T, jacobian)
+    Jtr = np.dot(jacobian.T, residual)
+    estimated_vars = np.squeeze(np.linalg.solve(JtJ, -Jtr))
+
+    #
+    # Unpack result and compute error
+    #
+
     estimated_pos_controls = np.reshape(estimated_vars[position_offs:position_offs+(bezier_degree-1)*3], (bezier_degree-1, 3))
     estimated_positions = np.array([spline.zero_offset_bezier(estimated_pos_controls, t) for t in frame_times])
     estimated_accel_bias = np.asarray(estimated_vars[accel_bias_offset:accel_bias_offset+3])
@@ -597,7 +607,7 @@ def run_from_data():
     #
     epipolar_residuals = evaluate_epipolar_residuals(sym_pos_controls, frame_timestamps,
                                                      frame_orientations, features, feature_mask)
-    accel_residuals = evaluate_accel_residuals(sym_pos_controls, sym_gravity, sym_accel_bias,
+    accel_residuals = evaluate_accel_residuals(sym_pos_controls, sym_accel_bias, sym_gravity,
                                                accel_timestamps, accel_readings, accel_orientations)
 
     residuals = accel_residuals + epipolar_residuals
@@ -654,7 +664,7 @@ def run_from_data():
 if __name__ == '__main__':
     np.set_printoptions(linewidth=500)
     #run_simulation()
-    #run_simulation_nonsymbolic()
+    run_simulation_nonsymbolic()
     #run_from_data()
     #run_accel_finite_differences()
-    run_epipolar_finite_differences()
+    #run_epipolar_finite_differences()
