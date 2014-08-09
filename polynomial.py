@@ -15,14 +15,18 @@ import compilation
 class OrderingError(Exception):
     pass
 
+
 class DivisionError(Exception):
     pass
+
 
 class VariableMismatchError(Exception):
     pass
 
+
 class CoerceError(Exception):
     pass
+
 
 class GrobnerBasisTooLargeError(Exception):
     pass
@@ -566,7 +570,7 @@ class Polynomial(object):
     def coordinate(cls, var_index, num_vars, ctype=None):
         """Construct a polynomial corresponding to the i-th variable."""
         assert 0 <= var_index < num_vars
-        return Polynomial.create([Term(1, tuple(i==var_index for i in range(num_vars)))], num_vars, ctype)
+        return Polynomial.create([Term(1, tuple(int(i==var_index) for i in range(num_vars)))], num_vars, ctype)
 
     @classmethod
     def from_monomial(cls, monomial, coefficient=1, ctype=None):
