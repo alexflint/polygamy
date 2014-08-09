@@ -3,83 +3,127 @@ import scipy.linalg
 
 from polynomial import *
 
-F = parse('x**2 + y**2 - 1', 'x-y')
-Ls = [ [], [(1,0), (0,1)] ]
-basis = { (0,1), (0,0) }
-num_vars = 2
-var = 0
+def main():
+    vars = parse('x', 'y')
+    x, y = vars
 
-print 'F:'
-for f in F:
-    print '  ',f
+    equations = [x**2 + y**2 - 1, x-y]
+    expansion_monomials = [[], [x, y]]
 
-F_ext = list(F)
-for f,L in zip(F,Ls):
-    for monomial in L:
-        F_ext.append(f * monomial)
+    p = x + 2*y
+    num_vars = len(vars)
 
-print 'F_ext:'
-for f in F_ext:
-    print '  ',f
+    print 'F:'
+    for f in equations:
+        print '  ', f
 
-var_monomial = tuple(i==var for i in range(num_vars))
-monomials = set(term.monomial for f in F for term in f.terms)
-products = set(multiply_monomial(var_monomial, b) for b in basis)
-required = products.difference(basis)
-nuissance = monomials.difference(set.union(basis, required))
+    expanded_equations = list(equations)
+    for f, expansions in zip(equations, expansion_monomials):
+        for monomial in expansions:
+            expanded_equations.append(f * monomial)
 
-print '\nNuissance:'
-for x in nuissance:
-    print '  ',as_polynomial(x, num_vars)
-print 'Required:'
-for x in required:
-    print '  ',as_polynomial(x, num_vars)
-print 'Basis:'
-for x in basis:
-    print '  ',as_polynomial(x, num_vars)
+    print 'Expanded equations:'
+    for f in expanded_equations:
+        print '  ', f
 
-nn = len(nuissance)
-nr = len(required)
-nb = len(basis)
+    present = set(term.monomial for f in expanded_equations for term in f)
 
-ordering = list(nuissance) + list(required) + list(basis)
+    permissible = set()
+    for m in present:
+        p_m = p * m
+        if all(mi in present for mi in p_m.monomials):
+            permissible.add(m)
 
-C,X = matrix_form(F_ext, ordering)
-C = C.astype(float)
+    basis = permissible
 
-print '\nC:'
-print C
+    p_basis = []
+    required = set()
+    for m in basis:
+        p_m = p * m
+        p_basis.append(p_m)
+        for mi in p_m.monomials:
+            if mi not in basis:
+                required.add(mi)
 
-print '\nX:'
-for x in X:
-    print '  ',x
+    nuissance = list(present.difference(set.union(basis, required)))
+    required = list(required)
+    basis = list(basis)
+    permissible = list(permissible)
 
-P,L,U = scipy.linalg.lu(C)
+    print 'Present monomials:', ', '.join(map(str, map(Term.from_monomial, present)))
+    print 'Permissible monomials:', ', '.join(map(str, map(Term.from_monomial, permissible)))
+    print 'Required monomials:', ', '.join(map(str, map(Term.from_monomial, required)))
+    print 'Nuissance monomials:', ', '.join(map(str, map(Term.from_monomial, nuissance)))
 
-print '\nU:'
-print U
+    # Construct the three column blocks from the expanded equations
+    c_nuissance, _ = matrix_form(expanded_equations, nuissance)
+    c_required, _ = matrix_form(expanded_equations, required)
+    c_basis, _ = matrix_form(expanded_equations, basis)
+    c = np.hstack((c_nuissance, c_required, c_basis))
 
-C2 = U[ nn:, nn: ]
+    print 'c_nuissance:'
+    print c_nuissance
+    print 'c_required:'
+    print c_required
+    print 'c_basis:'
+    print c_basis
+    print 'c:'
+    print c
 
-print '\nC2:'
-print C2
+    # Eliminate the nuissance monomials
+    p, l, u = scipy.linalg.lu(c)
 
-C_R2 = C2[ -nr:, :nr  ]
-C_B2 = C2[ -nr:,  nr: ]
+    print 'u:'
+    print u
 
-print '\nC_R2:'
-print C_R2
-print '\nC_B2:'
-print C_B2
+    nn = len(nuissance)
+    nb = len(basis)
+    c1 = u[nn:nn+nb, nn:nn+nb]
+    c2 = u[nn:nn+nb, nn+nb:]
 
-A = - np.dot(np.linalg.inv(C_R2), C_B2)
+    print 'c1:'
+    print c1
+    print np.linalg.inv(c1)
 
-print '\nA:'
-print A
+    # Check rank of c1
+    rank = np.linalg.matrix_rank(c1)
+    if rank < nb:
+        print 'Error: c1 is only of rank %d' % rank
 
-eigvals,eigvecs = scipy.linalg.eig(A)
-print '\nEigenvalues:'
-print eigvals
-print '\nEigenvectors:'
-print eigvecs
+    # Compute action matrix form for p*B
+    print 'p_basis:'
+    print p_basis
+    print 'basis:'
+    print basis
+    action_b, _ = matrix_form(p_basis, basis)
+    action_r, _ = matrix_form(p_basis, required)
+    action = action_b - np.dot(action_r, np.linalg.solve(c1, c2))
 
+    print 'action matrix:'
+    print action
+
+    # Find indices within basis
+    unit_index = basis.index(Polynomial.constant(1, num_vars))
+    var_indices = [basis.index(var) for var in vars]
+
+    # Compute eigenvalues and eigenvectors
+    eigvals, eigvecs = np.linalg.eig(action)
+
+    # Test each solution
+    solutions = []
+    for eigvec in eigvecs.T:
+        candidate = [eigvec[i]/eigvec[unit_index] for i in var_indices]
+        print 'Candidate solution:', candidate
+        values = [f(*candidate) for f in equations]
+        print '  System values:', values
+        if np.linalg.norm(values) < 1e-8:
+            solutions.append(candidate)
+
+    # Report final solutions
+    print 'Solutions:'
+    for solution in solutions:
+        print '  ' + ' '.join('%s=%10.6f' % (var, val) for var, val in zip(vars, solution))
+
+
+if __name__ == '__main__':
+    main()
