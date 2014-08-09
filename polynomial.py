@@ -582,6 +582,11 @@ class Polynomial(object):
         return Polynomial.create([Term(1, tuple(int(i==var_index) for i in range(num_vars)))], num_vars, ctype)
 
     @classmethod
+    def coordinates(cls, num_vars, ctype=None):
+        """Construct a polynomial corresponding to the i-th variable."""
+        return [Polynomial.coordinate(i, num_vars, ctype) for i in range(num_vars)]
+
+    @classmethod
     def from_monomial(cls, monomial, coefficient=1, ctype=None):
         """Construct a polynomial from a single monomial."""
         return Polynomial.create([Term(coefficient, monomial)], len(monomial), ctype)
