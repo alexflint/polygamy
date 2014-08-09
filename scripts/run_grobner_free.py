@@ -4,19 +4,46 @@ import scipy.linalg
 from polynomial import *
 
 def main():
-    vars = parse('x', 'y')
-    x, y = vars
+    #run_two_vars()
+    run_three_vars()
 
-    equations = [x**2 + y**2 - 1, x-y]
-    expansion_monomials = [[], [x, y]]
 
-    p = x + 2*y
-    num_vars = len(vars)
+def run_two_vars():
+    x, y = Polynomial.coordinates(2)
+    equations = [x**2 + y**2 - 1,
+                 x-y]
+    expansion_monomials = [[x, y, y],
+                           [x, y, x**2, x*y, y**2]]
+    run_grobner_free(equations, expansion_monomials)
 
-    print 'F:'
+
+def run_three_vars():
+    x, y, z = Polynomial.coordinates(3)
+    equations = [
+        x**2 + y**2 + z**2 - 1,
+        x - y,
+        x - z
+    ]
+    expansion_monomials = [
+        [],
+        [x, y, z],
+        [x, y, z],
+    ]
+    run_grobner_free(equations, expansion_monomials)
+
+
+def run_grobner_free(equations, expansion_monomials):
+    np.random.seed(0)
+    vars = Polynomial.coordinates(equations[0].num_vars)
+
+    # Pick a polynomial to compute the action matrix for
+    p = sum(np.random.rand() * var for var in vars)
+
+    print 'Equations:'
     for f in equations:
         print '  ', f
 
+    # Expand equations
     expanded_equations = list(equations)
     for f, expansions in zip(equations, expansion_monomials):
         for monomial in expansions:
@@ -28,6 +55,7 @@ def main():
 
     present = set(term.monomial for f in expanded_equations for term in f)
 
+    # Compute permissible monomials
     permissible = set()
     for m in present:
         p_m = p * m
@@ -36,6 +64,7 @@ def main():
 
     basis = permissible
 
+    # Compute required monomials
     p_basis = []
     required = set()
     for m in basis:
@@ -78,23 +107,22 @@ def main():
 
     nn = len(nuissance)
     nb = len(basis)
-    c1 = u[nn:nn+nb, nn:nn+nb]
-    c2 = u[nn:nn+nb, nn+nb:]
+    nr = len(required)
+    c1 = u[nn:nn+nr, nn:nn+nr]
+    c2 = u[nn:nn+nr, nn+nr:]
 
     print 'c1:'
     print c1
-    print np.linalg.inv(c1)
 
     # Check rank of c1
     rank = np.linalg.matrix_rank(c1)
-    if rank < nb:
-        print 'Error: c1 is only of rank %d' % rank
+    if rank < c1.shape[0]:
+        print 'Error: c1 is only of rank %d (needed rank %d)' % (rank, len(c1.shape[0]))
+        return
 
     # Compute action matrix form for p*B
     print 'p_basis:'
     print p_basis
-    print 'basis:'
-    print basis
     action_b, _ = matrix_form(p_basis, basis)
     action_r, _ = matrix_form(p_basis, required)
     action = action_b - np.dot(action_r, np.linalg.solve(c1, c2))
@@ -103,7 +131,7 @@ def main():
     print action
 
     # Find indices within basis
-    unit_index = basis.index(Polynomial.constant(1, num_vars))
+    unit_index = basis.index(Polynomial.constant(1, len(vars)))
     var_indices = [basis.index(var) for var in vars]
 
     # Compute eigenvalues and eigenvectors
@@ -118,6 +146,10 @@ def main():
         print '  System values:', values
         if np.linalg.norm(values) < 1e-8:
             solutions.append(candidate)
+
+    print 'Basis size: ', len(basis)
+    print 'Num required: ', len(required)
+    print 'Num nuissance: ', len(nuissance)
 
     # Report final solutions
     print 'Solutions:'
