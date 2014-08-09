@@ -330,6 +330,10 @@ class Term(object):
     """Represents a multivariate polynomial term of the form
     c * x1^a1 * ... * xn^an."""
 
+    @classmethod
+    def from_monomial(cls, monomial):
+        return Term(1, monomial)
+
     def __init__(self, coef, monomial, ctype=None):
         #if not all(isinstance(m, numbers.Integral) for m in monomial):
         #    raise ValueError('monomial exponents should be integers')
@@ -421,9 +425,10 @@ class Term(object):
         value for the given variable. The result formally contains the
         same number of variables but the evaluated variable always has
         an exponent of zero."""
-        return Term(self.coef * value**self.monomial[var_index],
-                    tuple(0 if i==var_index else a for i,a in enumerate(self.monomial)),
-                    self.ctype)
+        new_coef = self.coef * value**self.monomial[var_index]
+        new_monomial = list(self.monomial)
+        new_monomial[var_index] = 0
+        return Term(new_coef, tuple(new_monomial), self.ctype)
 
     def divides(self, rhs):
         rhs = as_term(rhs, len(self.monomial))
@@ -448,7 +453,11 @@ class Term(object):
     def format(self, use_superscripts=True):
         """Construct a string representation of this polynomial."""
         strings = []
-        if self.coef != 1 or self.total_degree == 0:
+        if self.total_degree == 0:
+            strings.append(str(self.coef))
+        elif self.coef == -1:
+            strings.append('-')
+        elif self.coef != 1:
             strings.append(str(self.coef))
         for var_index,exponent in enumerate(self.monomial):
             if exponent >= 1:
