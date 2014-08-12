@@ -5,8 +5,8 @@ from polynomial import *
 
 def main():
     np.set_printoptions(linewidth=300, suppress=True)
-    run_two_vars()
-    #run_three_vars()
+    #run_two_vars()
+    run_three_vars()
     #run_three_spheres()
 
 
@@ -16,16 +16,6 @@ def run_two_vars():
                  x-y]
     expansion_monomials = [[x, y],
                            [x, y, x*y, x*x, y*y]]
-    #solve_truncated(equations, expansion_monomials)
-    solve_basis_selection(equations, expansion_monomials)
-
-
-def run_two_vars_v2():
-    x, y = Polynomial.coordinates(2)
-    equations = [x**2 + y**2 - 1,
-                 x-y]
-    expansion_monomials = [[x, y, y],
-                           [x, y, x**2, x*y, y**2]]
     #solve_truncated(equations, expansion_monomials)
     solve_basis_selection(equations, expansion_monomials)
 
@@ -42,7 +32,9 @@ def run_three_vars():
         [x, y, z],
         [x, y, z],
     ]
-    solve_truncated(equations, expansion_monomials)
+
+    #solve_truncated(equations, expansion_monomials)
+    solve_basis_selection(equations, expansion_monomials)
 
 
 def run_three_spheres():
@@ -86,7 +78,12 @@ def solve_monomials(monomials, values):
     if any(np.abs(v) < 1e-8 for v in values):
         print 'Warning: some values were zero, cannot solve for these'
         return
+
     log_x, residuals, rank, svs = np.linalg.lstsq(a, np.log(np.abs(values)))
+    if rank < a.shape[0]:
+        print 'Warning: rank defficient monomial equations (incomplete basis?)'
+        return
+
     if np.linalg.norm(residuals) < 1e-6:
         abs_x = np.exp(log_x)
         for signs in itertools.product((-1, 1), repeat=len(abs_x)):
@@ -181,9 +178,21 @@ def solve_basis_selection(equations, expansion_monomials):
     c_p1_p = np.dot(c_p1, p)
     assert c_p1_p.shape == (nr, npe)
 
+    x_reordered = np.dot(p.T, x_permissible)
+
     success = False
     max_eliminations = min(len(expanded_equations), len(present)) - nr - nn
-    for ne in range(1, max_eliminations):
+    for ne in range(0, max_eliminations):
+        # Compute the basis
+        eliminated = [poly.leading_term(LexOrdering()).monomial for poly in x_reordered[:ne]]
+        basis = [poly.leading_term(LexOrdering()).monomial for poly in x_reordered[ne:]]
+
+        # Check whether this basis is complete
+        rank = np.linalg.matrix_rank(basis)
+        if rank < len(vars):
+            print 'Basis is incomplete at ne=%d (rank=%d, basis=%s)' % (ne, rank, x_reordered[ne:])
+            continue
+
         # Form c1, c2
         c_pp1 = c_p1_p[:nr, :ne]
         u_pp2 = r[:ne, :ne]
@@ -194,22 +203,19 @@ def solve_basis_selection(equations, expansion_monomials):
         c_b2 = r[:ne, ne:]
         c2 = np.vstack((c_b1, c_b2))
 
-        # Compute the basis
-        x_reordered = np.dot(p.T, x_permissible)
-        eliminated = [poly.leading_term(LexOrdering()).monomial for poly in x_reordered[:ne]]
-        basis = [poly.leading_term(LexOrdering()).monomial for poly in x_reordered[ne:]]
-
         # Check rank of c1
         assert c1.shape[0] == c1.shape[1]
         condition = np.linalg.cond(c1)
-        if condition < 1e+5:
-            success = True
-            print 'Success at ne=%d (condition=%f)' % (ne, condition)
-            break
-        else:
-            print 'Conditioning is too poor at ne=%d (condition=%f)' % (ne, condition)
+        if condition > 1e+5:
+            print 'Conditioning is poor at ne=%d (condition=%f)' % (ne, condition)
+            continue
+
+        success = True
+        print 'Success at ne=%d (condition=%f)' % (ne, condition)
+        break
 
     if not success:
+        print 'Could not find a valid basis'
         return
 
     # Report
@@ -219,20 +225,10 @@ def solve_basis_selection(equations, expansion_monomials):
     print 'Num eliminated by qr: ', ne
     print 'Basis size: ', len(basis)
 
-    # Compute p * x_basis
-    p_basis = [lambda_p*m for m in basis]
-    print 'p_basis:'
-    print p_basis
-    print 'num_vars:', p_basis[0].num_vars
-    print 'basis:', map(Term.from_monomial, basis)
-
     # Compute action matrix form for p*B
+    p_basis = [lambda_p*m for m in basis]
     action_b, _ = matrix_form(p_basis, basis)
     action_r, _ = matrix_form(p_basis, required + eliminated)
-    print 'c1:', c1.shape
-    print 'c2:', c2.shape
-    print 'action_b:', action_b.shape
-    print 'action_r:', action_r.shape
     action = action_b - np.dot(action_r, np.linalg.solve(c1, c2))
 
     print 'action matrix:'
