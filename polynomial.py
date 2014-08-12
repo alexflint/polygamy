@@ -93,6 +93,11 @@ def multiply_monomial(A, B):
     return tuple(A[i] + B[i] for i in range(len(A)))
 
 
+def evaluate_monomial(m, x):
+    """Evaluate the monomial m at x."""
+    return product(xi**mi for mi, xi in zip(m, x))
+
+
 def as_monomial(x):
     """Convert scalars, terms, or monomials to polynomials."""
     if isinstance(x, Monomial):
@@ -418,7 +423,7 @@ class Term(object):
     def __call__(self, *xs):
         """Evaluate this term at x."""
         assert len(xs) == len(self.monomial)
-        return self.coef * product(x**a for x, a in zip(xs, self.monomial))
+        return self.coef * evaluate_monomial(self.monomial, xs)
 
     def evaluate_partial(self, var_index, value):
         """Create a new term with by evaluating this term at the given
@@ -1076,6 +1081,7 @@ def matrix_form(F, ordering=None):
     if isinstance(ordering, MonomialOrdering):
         monomials = sorted(monomials, key=lambda monomial: ComparableTerm(ordering, Term(1,monomial)))
     elif ordering is not None:
+        assert all(isinstance(x, tuple) for x in ordering), 'ordering should be a list of tuples'
         monomials = ordering
     X = [as_polynomial(monomial, F[0].num_vars) for monomial in monomials]
     C = np.asarray([[f.coefficients[monomial] for monomial in monomials] for f in F])
