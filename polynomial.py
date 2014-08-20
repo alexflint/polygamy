@@ -851,10 +851,13 @@ class Polynomial(object):
     def __pow__(self, rhs):
         if not isinstance(rhs, numbers.Integral) or rhs < 0:
             return NotImplemented
-        result = Polynomial(self.num_vars, self.ctype)
-        for terms in itertools.product(self, repeat=rhs):
-            result._add_term_unchecked(product(terms))
-        return result
+        elif rhs == 0:
+            return Polynomial.constant(1, self.num_vars, self.ctype)
+        else:
+            result = Polynomial(self.num_vars, self.ctype)
+            for terms in itertools.product(self, repeat=rhs):
+                result._add_term_unchecked(product(terms))
+            return result
 
     def __truediv__(self, rhs):
         """We only support division by a single terms. To perform polynomial
