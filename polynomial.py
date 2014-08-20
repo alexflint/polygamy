@@ -1117,21 +1117,21 @@ def quadratic_form(polynomial):
 # Operations for ideals
 #
 
-def ideal_intersection(*Fs):
-    return [ f for F in Fs for f in F ]
+def ideal_intersection(*fs):
+    return [f for F in fs for f in F]
 
 
-def ideal_union(*Fs):
-    return [ product(F) for F in itertools.product(*Fs) ]
+def ideal_union(*fs):
+    return [product(F) for F in itertools.product(*fs)]
 
 
 def ideal_from_zero(zero, ctype=None):
-    '''Construct an ideal that vanishes at the given zero.'''
-    return [ Polynomial.coordinate(i, len(zero), ctype) - zi for i, zi in enumerate(zero) ]
+    """Construct an ideal that vanishes at the given zero."""
+    return [Polynomial.coordinate(i, len(zero), ctype) - zi for i, zi in enumerate(zero)]
 
 
 def ideal_from_variety(zeros, ctype=None):
-    '''Construct an ideal from a finite variety.'''
+    """Construct an ideal from a finite variety."""
     return ideal_union(*(ideal_from_zero(zero, ctype) for zero in zeros))
 
 
