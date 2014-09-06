@@ -27,8 +27,8 @@ def run_two_vars():
 def run_two_circles():
     x, y = Polynomial.coordinates(2)
     equations = [
-        (x-1)**2 + (y+1)**2 - 9,
-        (x-1)**2 + (y+3)**2 - 9,
+        (x-1)**2 + (y+1)**2 - 25,
+        (x-2)**2 + (y+3)**2 - 25,
         ]
     expansion_monomials = [
         [x, y, x*y, x*x, y*y, x*x*y],

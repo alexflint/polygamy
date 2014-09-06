@@ -573,7 +573,6 @@ def run_from_data():
     # Make feature table
     #
     features = np.ones((num_frames, num_landmarks, 2))
-    feature_mask = np.zeros((num_frames, num_landmarks), bool)
     features.fill(np.nan)
     for landmark_id, frame_id, feature in zip(landmarks_ids, frame_ids, feature_data[:, 2:]):
         i = frame_index_by_id[frame_id]
