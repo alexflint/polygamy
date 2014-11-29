@@ -1,128 +1,20 @@
+import itertools
+import fractions
 import numpy as np
 import scipy.linalg
 
-from polynomial import *
+import echelon
+from polynomial import Polynomial, Term, evaluate_monomial, gbasis, matrix_form, GrevlexOrdering, LexOrdering,\
+    as_term, as_polynomial
 
 
-def main():
-    np.random.seed(0)
-    np.set_printoptions(linewidth=300, suppress=True)
-    #run_two_vars()
-    #run_two_circles()
-    #run_three_circles()
-    run_synthetic_ideal()
-    #run_three_vars()
-    #run_three_spheres()
+class SolutionSet(object):
+    def __init__(self, solutions):
+        self.solutions = solutions
 
 
-def run_two_vars():
-    x, y = Polynomial.coordinates(2)
-    equations = [x**2 + y**2 - 1,
-                 x-y]
-    expansion_monomials = [
-        [x, y],
-        [x, y, x*y, x*x, y*y]
-    ]
-    #solve_truncated(equations, expansion_monomials)
-    solve_via_basis_selection(equations, expansion_monomials, x+y+1)
-
-
-def run_two_circles():
-    x, y = Polynomial.coordinates(2)
-    equations = [
-        (x+2)**2 + (y+2)**2 - 25,
-        (x-6)**2 + (y+2)**2 - 25,
-        ]
-    expansion_monomials = [
-        [x, y, x*y, x*x, y*y, x*x*y],
-        [x, y, x*y, x*x, y*y, x*x*y]
-    ]
-    solutions = [(2, 1), (2, -5)]
-    solve_via_basis_selection(equations, expansion_monomials, x+2*y-3, solutions=solutions)
-
-
-def run_three_circles():
-    x, y, z = Polynomial.coordinates(3)
-    equations = [
-        (x-6)**2 + (y-1)**2 + (z-1)**2 - 25,
-        (x-1)**2 + (y-6)**2 + (z-1)**2 - 25,
-        (x-1)**2 + (y-1)**2 + (z-6)**2 - 25,
-        ]
-    expansion_monomials = [
-        all_monomials((x, y, z), degree=2),
-        all_monomials((x, y, z), degree=2),
-        all_monomials((x, y, z), degree=2),
-        ]
-    solutions = [(1, 1, 1)]
-    lambda_poly = x + 2*y + 3*z + 4
-    solve_via_basis_selection(equations, expansion_monomials, lambda_poly, solutions=solutions)
-
-
-def run_synthetic_ideal():
-    zeros = [[-2., -3., 5., 6.], [4.5, 5., -1., 8.]]
-    equations = ideal_from_variety(zeros, ctype=float)
-    coords = Polynomial.coordinates(len(zeros[0]))
-    expansion_monomials = [
-        all_monomials(coords, degree=1),
-        all_monomials(coords, degree=1),
-        all_monomials(coords, degree=1),
-        ]
-    lambda_poly = sum(xi * (i + 1) for i, xi in enumerate(coords)) + 1
-    solve_via_basis_selection(equations,
-                              expansion_monomials,
-                              lambda_poly,
-                              solutions=[zeros[0]],
-                              include_grobner=False)
-
-
-def run_three_vars():
-    x, y, z = Polynomial.coordinates(3)
-    equations = [
-        x**2 + y**2 + z**2 - 1,
-        x - y,
-        x - z
-    ]
-    expansion_monomials = [
-        [],
-        [x, y, z],
-        [x, y, z]
-    ]
-
-    #solve_truncated(equations, expansion_monomials)
-    solve_via_basis_selection(equations, expansion_monomials, x)
-
-
-def all_monomials(variables, degree):
-    return map(product, itertools.product(list(variables)+[1], repeat=degree))
-
-
-def run_three_spheres():
-    x, y, z = Polynomial.coordinates(3)
-    equations = [
-        x**2 + y**2 + z**2 - 9,
-        (x-1)**2 + (y-1)**2 + z**2 - 9,
-        (x-1)**2 + (y-1)**2 + (z-1)**2 - 9,
-    ]
-    expansion_monomials = [
-        #[x, y, z, x*x, y*y, z*z, x*y, y*z, x*z],
-        #[x, y, z, x*x, y*y, z*z, x*y, y*z, x*z],
-        #[x, y, z, x*x, y*y, z*z, x*y, y*z, x*z],
-        #list(all_monomials((x, y, z), 2)),
-        #list(all_monomials((x, y, z), 2)),
-        #list(all_monomials((x, y, z), 2)),
-        #[x, x*y, x*z],
-        #[x, x*y, x*z],
-        #[x, x*y, x*z],
-        [],
-        [],
-        [x, y, z],
-    ]
-
-    # Pick a polynomial to compute the action matrix for
-    lambda_poly = x  # sum(np.random.rand() * var for var in vars)
-
-    #solve_truncated(equations, expansion_monomials, lambda_poly)
-    solve_via_basis_selection(equations, expansion_monomials, lambda_poly)
+class PolynomialSolverError(Exception):
+    pass
 
 
 def spy(a, threshold=1e-8):
@@ -144,57 +36,6 @@ def spymag(a):
     a = np.atleast_2d(a)
     return '\n'.join('[' + ''.join(map(magdigit, row)) + ']'
                      for row in a)
-
-
-def swap_rows(a, i, j):
-    # Note that a[i],a[j] = a[j],a[i] will _not_ work here
-    temp = a[i].copy()
-    a[i] = a[j]
-    a[j] = temp
-
-
-class RowEchelonError(Exception):
-    def __init__(self, col):
-        self.col = col
-    def __str__(self):
-        return 'elimination failed at column '+str(self.col)
-
-
-def partial_lu(a, ncols):
-    """Compute an LU decomposition whether only the first N columns of U are upper
-    triangular."""
-    assert a.shape[0] <= a.shape[1], \
-        'partial_lu not implemented for matrices with nr > nc'
-    p, l, u = scipy.linalg.lu(a)
-    ll = l.copy()
-    ll[:, ncols:] = np.eye(*l.shape)[:, ncols:]
-    uu = scipy.linalg.solve_triangular(ll, np.dot(p.T, a), lower=True)
-    return p, ll, uu
-
-
-def partial_row_echelon_form(a, ncols, tol=1e-8):
-    """Eliminate the first N columns of A, including pivoting."""
-    a = np.asarray(a)
-    assert ncols <= a.shape[1]
-    if a.dtype.kind == 'i':
-        a = a.astype(float)
-
-    row = 0
-    u = a.copy()
-    for col in range(ncols):
-        # move the row with the largest element in col i to the top
-        pivot_row = row + np.argmax(np.abs(u[row:, col]))
-        swap_rows(u, row, pivot_row)
-        if abs(u[row, col]) < tol:
-            # this column is already eliminated, which is fine
-            u[row, col] = 0.
-        else:
-            u[row, col+1:] /= u[row, col]
-            u[row, col] = 1.
-            u[row+1:, col+1:] -= u[row+1:, col:col+1] * u[row, col+1:]
-            u[row+1:, col] = 0.
-            row += 1
-    return u, row
 
 
 def permutation_matrix(p):
@@ -245,7 +86,7 @@ def solve_monomial_equations(monomials, values):
 
 
 def solve_via_basis_selection(equations, expansion_monomials, lambda_poly, solutions=None, include_grobner=False):
-    vars = Polynomial.coordinates(lambda_poly.num_vars)
+    nvars = lambda_poly.num_vars
 
     print 'Equations:'
     for f in equations:
@@ -308,14 +149,12 @@ def solve_via_basis_selection(equations, expansion_monomials, lambda_poly, solut
     print 'Num equations:', len(expanded_equations)
     print 'Num equations after eliminating:', num_remaining
 
-    if len(permissible) <= len(vars):
-        print 'Error: There are fewer permissible monomials than variables. Add more expansions.'
-        return
+    if len(permissible) <= nvars:
+        raise PolynomialSolverError('There are fewer permissible monomials than variables. Add more expansions.')
 
     if num_remaining <= 0:
-        print 'Error: The number of required plus nuissance monomials exceeds the number of equations. ' \
-              'Add more expansions.'
-        return
+        raise PolynomialSolverError('The number of required plus nuissance monomials exceeds the number of equations. '
+                                    'Add more expansions.')
 
     # Construct the three column blocks from the expanded equations
     c_nuissance, x_nuissance = matrix_form(expanded_equations, nuissance)
@@ -341,7 +180,7 @@ def solve_via_basis_selection(equations, expansion_monomials, lambda_poly, solut
             print '  Evaluated at %s: %s' % (s, np.dot(c_complete, evaluate_poly_vector(x_complete, s, float)))
 
     # Eliminate the nuissance monomials
-    u_complete, nuissance_rows_used = partial_row_echelon_form(c_complete, ncols=nn)
+    u_complete, nuissance_rows_used = echelon.partial_row_echelon_form(c_complete, ncols=nn)
     c_elim = u_complete[nuissance_rows_used:, nn:]
     x_elim = x_complete[nn:]
 
@@ -358,7 +197,7 @@ def solve_via_basis_selection(equations, expansion_monomials, lambda_poly, solut
             print '  Evaluated at %s: %s' % (s, np.dot(c_elim, evaluate_poly_vector(x_elim, s, float)))
 
     # Put the required monomial columns on row echelon form
-    u_elim, required_rows_used = partial_row_echelon_form(c_elim, ncols=nr, tol=1e-15)
+    u_elim, required_rows_used = echelon.partial_row_echelon_form(c_elim, ncols=nr, tol=1e-15)
 
     print 'Used %d rows to put %d required monomials on row echelon form' % (required_rows_used, nr)
 
@@ -413,7 +252,7 @@ def solve_via_basis_selection(equations, expansion_monomials, lambda_poly, solut
 
         # Check whether this basis is complete
         rank = np.linalg.matrix_rank(basis)
-        if rank < len(vars):
+        if rank < nvars:
             print 'Basis is incomplete at ne=%d (rank=%d, basis=%s)' % (ne, rank, x_reordered[ne:])
             continue
 
@@ -438,8 +277,7 @@ def solve_via_basis_selection(equations, expansion_monomials, lambda_poly, solut
             print 'Conditioning is poor at ne=%d (condition=%f, basis=%s)' % (ne, condition, x_reordered[ne:])
 
     if not success:
-        print 'Could not find a valid basis'
-        return
+        raise PolynomialSolverError('Could not find a valid basis')
 
     # Report
     print 'Num monomials: ', len(present)
@@ -462,8 +300,8 @@ def solve_via_basis_selection(equations, expansion_monomials, lambda_poly, solut
     print 'Basis * p'
     for bi, row in zip(basis, action):
         lhs = bi*lambda_poly
-        rhs = sum(as_polynomial(bj, len(vars)) * aj for bj, aj in zip(basis, row))
-        print '  %s * (%s) = %s = %s' % (as_term(bi, len(vars)), lambda_poly, lhs, rhs)
+        rhs = sum(as_polynomial(bj, nvars) * aj for bj, aj in zip(basis, row))
+        print '  %s * (%s) = %s = %s' % (as_term(bi, nvars), lambda_poly, lhs, rhs)
         if solutions is not None:
             for s in solutions:
                 print '    at %s, lhs=%s, rhs=%s' % (s, lhs(*s), rhs(*s))
@@ -472,7 +310,7 @@ def solve_via_basis_selection(equations, expansion_monomials, lambda_poly, solut
     print action
 
     # Find indices within basis
-    unit_index = basis.index(Polynomial.constant(1, len(vars)))
+    unit_index = basis.index(Polynomial.constant(1, nvars))
     #var_indices = [basis.index(var) for var in vars]
 
     # Compute eigenvalues and eigenvectors
@@ -501,131 +339,9 @@ def solve_via_basis_selection(equations, expansion_monomials, lambda_poly, solut
                 solutions.append(solution)
 
     # Report final solutions
+    base_vars = Polynomial.coordinates(lambda_poly.num_vars)
     print 'Solutions:'
     for solution in solutions:
-        print '  ' + ' '.join('%s=%10.6f' % (var, val) for var, val in zip(vars, solution))
+        print '  ' + ' '.join('%s=%-10.4f' % (var, val) for var, val in zip(base_vars, solution))
 
-
-def solve_via_truncation(equations, expansion_monomials, lambda_poly):
-    vars = Polynomial.coordinates(equations[0].num_vars)
-
-    print 'Equations:'
-    for f in equations:
-        print '  ', f
-
-    # Expand equations
-    expanded_equations = list(equations)
-    for f, expansions in zip(equations, expansion_monomials):
-        for monomial in expansions:
-            expanded_equations.append(f * monomial)
-
-    print 'Expanded equations:'
-    for f in expanded_equations:
-        print '  ', f
-
-    present = set(term.monomial for f in expanded_equations for term in f)
-
-    # Compute permissible monomials
-    permissible = set()
-    for m in present:
-        p_m = lambda_poly * m
-        if all(mi in present for mi in p_m.monomials):
-            permissible.add(m)
-
-    basis = permissible
-
-    # Compute required monomials
-    p_basis = []
-    required = set()
-    for m in basis:
-        p_m = lambda_poly * m
-        p_basis.append(p_m)
-        for mi in p_m.monomials:
-            if mi not in basis:
-                required.add(mi)
-
-    nuissance = list(present.difference(set.union(basis, required)))
-    required = list(required)
-    basis = list(basis)
-    permissible = list(permissible)
-
-    print 'Present monomials:', ', '.join(map(str, map(Term.from_monomial, present)))
-    print 'Permissible monomials:', ', '.join(map(str, map(Term.from_monomial, permissible)))
-    print 'Required monomials:', ', '.join(map(str, map(Term.from_monomial, required)))
-    print 'Nuissance monomials:', ', '.join(map(str, map(Term.from_monomial, nuissance)))
-
-    # Construct the three column blocks from the expanded equations
-    c_nuissance, _ = matrix_form(expanded_equations, nuissance)
-    c_required, _ = matrix_form(expanded_equations, required)
-    c_basis, _ = matrix_form(expanded_equations, basis)
-    c = np.hstack((c_nuissance, c_required, c_basis))
-
-    print 'c_nuissance:'
-    print c_nuissance
-    print 'c_required:'
-    print c_required
-    print 'c_basis:'
-    print c_basis
-    print 'c:'
-    print c
-
-    # Eliminate the nuissance monomials
-    lambda_poly, l, u = scipy.linalg.lu(c)
-
-    print 'u:'
-    print u
-
-    nn = len(nuissance)
-    nb = len(basis)
-    nr = len(required)
-    c1 = u[nn:nn+nr, nn:nn+nr]
-    c2 = u[nn:nn+nr, nn+nr:]
-
-    print 'c1:'
-    print c1
-
-    # Check rank of c1
-    rank = np.linalg.matrix_rank(c1)
-    if rank < c1.shape[0]:
-        print 'Error: c1 is only of rank %d (needed rank %d)' % (rank, c1.shape[0])
-        return
-
-    # Compute action matrix form for p*B
-    print 'p_basis:'
-    print p_basis
-    action_b, _ = matrix_form(p_basis, basis)
-    action_r, _ = matrix_form(p_basis, required)
-    action = action_b - np.dot(action_r, np.linalg.solve(c1, c2))
-
-    print 'action matrix:'
-    print action
-
-    # Find indices within basis
-    unit_index = basis.index(Polynomial.constant(1, len(vars)))
-    var_indices = [basis.index(var) for var in vars]
-
-    # Compute eigenvalues and eigenvectors
-    eigvals, eigvecs = np.linalg.eig(action)
-
-    # Test each solution
-    solutions = []
-    for eigvec in eigvecs.T:
-        candidate = [eigvec[i]/eigvec[unit_index] for i in var_indices]
-        print 'Candidate solution:', candidate
-        values = [f(*candidate) for f in equations]
-        print '  System values:', values
-        if np.linalg.norm(values) < 1e-8:
-            solutions.append(candidate)
-
-    print 'Basis size: ', len(basis)
-    print 'Num required: ', len(required)
-    print 'Num nuissance: ', len(nuissance)
-
-    # Report final solutions
-    print 'Solutions:'
-    for solution in solutions:
-        print '  ' + ' '.join('%s=%10.6f' % (var, val) for var, val in zip(vars, solution))
-
-
-if __name__ == '__main__':
-    main()
+    return SolutionSet(solutions)
