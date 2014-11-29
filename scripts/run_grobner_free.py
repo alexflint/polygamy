@@ -9,7 +9,8 @@ def main():
     np.set_printoptions(linewidth=300, suppress=True)
     #run_two_vars()
     #run_two_circles()
-    run_three_circles()
+    #run_three_circles()
+    run_synthetic_ideal()
     #run_three_vars()
     #run_three_spheres()
 
@@ -52,11 +53,26 @@ def run_three_circles():
         all_monomials((x, y, z), degree=2),
         all_monomials((x, y, z), degree=2),
         ]
-    print 'expansions:'
-    print expansion_monomials
     solutions = [(1, 1, 1)]
     lambda_poly = x + 2*y + 3*z + 4
     solve_via_basis_selection(equations, expansion_monomials, lambda_poly, solutions=solutions)
+
+
+def run_synthetic_ideal():
+    zeros = [[-2., -3., 5., 6.], [4.5, 5., -1., 8.]]
+    equations = ideal_from_variety(zeros, ctype=float)
+    coords = Polynomial.coordinates(len(zeros[0]))
+    expansion_monomials = [
+        all_monomials(coords, degree=1),
+        all_monomials(coords, degree=1),
+        all_monomials(coords, degree=1),
+        ]
+    lambda_poly = sum(xi * (i + 1) for i, xi in enumerate(coords)) + 1
+    solve_via_basis_selection(equations,
+                              expansion_monomials,
+                              lambda_poly,
+                              solutions=[zeros[0]],
+                              include_grobner=False)
 
 
 def run_three_vars():
@@ -199,6 +215,17 @@ def solve_monomial_equations(monomials, values):
     assert all(isinstance(m, tuple) for m in monomials)
     a = np.asarray(monomials, float)
 
+    # First test whether each variable is present on its own
+    naked_indices = [None] * len(monomials[0])
+    for i, monomial in enumerate(monomials):
+        if sum(monomial) == 1:
+            naked_indices[monomial.index(1)] = i
+
+    if all(i is not None for i in naked_indices):
+        print '  Solved monomial equations the simple way'
+        yield np.take(values, naked_indices)
+        return
+
     if np.any(np.abs(values) < 1e-8):
         print 'Warning: some values were zero, cannot solve for these'
         return
@@ -217,12 +244,15 @@ def solve_monomial_equations(monomials, values):
                 yield x
 
 
-def solve_via_basis_selection(equations, expansion_monomials, lambda_poly, solutions=None):
+def solve_via_basis_selection(equations, expansion_monomials, lambda_poly, solutions=None, include_grobner=False):
     vars = Polynomial.coordinates(lambda_poly.num_vars)
 
     print 'Equations:'
     for f in equations:
         print '  ', f
+        if solutions is not None:
+            for solution in solutions:
+                print '    = %f at %s' % (f(*solution), solution)
 
     # Expand equations
     expanded_equations = list(equations)
@@ -230,11 +260,12 @@ def solve_via_basis_selection(equations, expansion_monomials, lambda_poly, solut
         for monomial in expansions:
             expanded_equations.append(f * monomial)
 
-    print 'Grobner basis:'
-    gb_equations = [p.astype(fractions.Fraction) for p in equations]
-    for f in gbasis(gb_equations, GrevlexOrdering()):
-        print '  ', f
-        expanded_equations.append(f)
+    if include_grobner:
+        print 'Grobner basis:'
+        gb_equations = [p.astype(fractions.Fraction) for p in equations]
+        for f in gbasis(gb_equations, GrevlexOrdering()):
+            print '  ', f
+            expanded_equations.append(f)
 
     print 'Expanded equations:'
     for f in expanded_equations:
@@ -310,11 +341,11 @@ def solve_via_basis_selection(equations, expansion_monomials, lambda_poly, solut
             print '  Evaluated at %s: %s' % (s, np.dot(c_complete, evaluate_poly_vector(x_complete, s, float)))
 
     # Eliminate the nuissance monomials
-    u_complete, rows_used = partial_row_echelon_form(c_complete, ncols=nn)
-    c_elim = u_complete[rows_used:, nn:]
+    u_complete, nuissance_rows_used = partial_row_echelon_form(c_complete, ncols=nn)
+    c_elim = u_complete[nuissance_rows_used:, nn:]
     x_elim = x_complete[nn:]
 
-    print 'Used %d rows to eliminate %d nuissance monomials' % (rows_used, nn)
+    print 'Used %d rows to eliminate %d nuissance monomials' % (nuissance_rows_used, nn)
 
     print 'After first LU:'
     print spy(u_complete)
@@ -327,15 +358,12 @@ def solve_via_basis_selection(equations, expansion_monomials, lambda_poly, solut
             print '  Evaluated at %s: %s' % (s, np.dot(c_elim, evaluate_poly_vector(x_elim, s, float)))
 
     # Put the required monomial columns on row echelon form
-    u_elim, rows_used = partial_row_echelon_form(c_elim, ncols=nr, tol=1e-15)
+    u_elim, required_rows_used = partial_row_echelon_form(c_elim, ncols=nr, tol=1e-15)
 
-    print 'Used %d rows to put %d required monomials on row echelon form' % (rows_used, nr)
+    print 'Used %d rows to put %d required monomials on row echelon form' % (required_rows_used, nr)
 
     print 'After second LU:'
     print spy(u_elim)
-    print u_elim
-    print 'original:'
-    print c_elim
 
     if solutions is not None:
         for s in solutions:
@@ -372,7 +400,12 @@ def solve_via_basis_selection(equations, expansion_monomials, lambda_poly, solut
             print '  Evaluated at %s: %s' % (s, np.dot(r, evaluate_poly_vector(x_reordered, s, float)))
 
     success = False
-    max_eliminations = min(len(expanded_equations) - rows_used - nr, len(present) - nn - nr)
+    max_eliminations = min(len(expanded_equations) - nuissance_rows_used - required_rows_used,
+                           len(present) - nn - nr)
+
+    if max_eliminations <= 0:
+        print 'Too few rows present - something went wrong'
+
     for ne in range(0, max_eliminations):
         # Compute the basis
         eliminated = [poly.leading_term(LexOrdering()).monomial for poly in x_reordered[:ne]]
