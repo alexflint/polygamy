@@ -3,11 +3,13 @@ import scipy.linalg
 
 from polynomial import *
 
+
 def main():
     np.random.seed(0)
     np.set_printoptions(linewidth=300, suppress=True)
     #run_two_vars()
-    run_two_circles()
+    #run_two_circles()
+    run_three_circles()
     #run_three_vars()
     #run_three_spheres()
 
@@ -21,21 +23,40 @@ def run_two_vars():
         [x, y, x*y, x*x, y*y]
     ]
     #solve_truncated(equations, expansion_monomials)
-    solve_via_basis_selection(equations, expansion_monomials, x+y)
+    solve_via_basis_selection(equations, expansion_monomials, x+y+1)
 
 
 def run_two_circles():
     x, y = Polynomial.coordinates(2)
     equations = [
-        (x-1)**2 + (y+1)**2 - 25,
-        (x-2)**2 + (y+3)**2 - 25,
+        (x+2)**2 + (y+2)**2 - 25,
+        (x-6)**2 + (y+2)**2 - 25,
         ]
     expansion_monomials = [
         [x, y, x*y, x*x, y*y, x*x*y],
         [x, y, x*y, x*x, y*y, x*x*y]
     ]
-    #solve_truncated(equations, expansion_monomials)
-    solve_via_basis_selection(equations, expansion_monomials, x+y)
+    solutions = [(2, 1), (2, -5)]
+    solve_via_basis_selection(equations, expansion_monomials, x+2*y-3, solutions=solutions)
+
+
+def run_three_circles():
+    x, y, z = Polynomial.coordinates(3)
+    equations = [
+        (x-6)**2 + (y-1)**2 + (z-1)**2 - 25,
+        (x-1)**2 + (y-6)**2 + (z-1)**2 - 25,
+        (x-1)**2 + (y-1)**2 + (z-6)**2 - 25,
+        ]
+    expansion_monomials = [
+        all_monomials((x, y, z), degree=2),
+        all_monomials((x, y, z), degree=2),
+        all_monomials((x, y, z), degree=2),
+        ]
+    print 'expansions:'
+    print expansion_monomials
+    solutions = [(1, 1, 1)]
+    lambda_poly = x + 2*y + 3*z + 4
+    solve_via_basis_selection(equations, expansion_monomials, lambda_poly, solutions=solutions)
 
 
 def run_three_vars():
@@ -150,7 +171,7 @@ def partial_row_echelon_form(a, ncols, tol=1e-8):
         swap_rows(u, row, pivot_row)
         if abs(u[row, col]) < tol:
             # this column is already eliminated, which is fine
-            u[col, col] = 0.
+            u[row, col] = 0.
         else:
             u[row, col+1:] /= u[row, col]
             u[row, col] = 1.
@@ -165,6 +186,10 @@ def permutation_matrix(p):
     for i, pi in enumerate(p):
         a[pi,i] = 1
     return a
+
+
+def evaluate_poly_vector(v, x, dtype):
+    return np.array([vi(*x) for vi in v], dtype)
 
 
 def solve_monomial_equations(monomials, values):
@@ -192,7 +217,7 @@ def solve_monomial_equations(monomials, values):
                 yield x
 
 
-def solve_via_basis_selection(equations, expansion_monomials, lambda_poly):
+def solve_via_basis_selection(equations, expansion_monomials, lambda_poly, solutions=None):
     vars = Polynomial.coordinates(lambda_poly.num_vars)
 
     print 'Equations:'
@@ -214,6 +239,9 @@ def solve_via_basis_selection(equations, expansion_monomials, lambda_poly):
     print 'Expanded equations:'
     for f in expanded_equations:
         print '  ', f
+        if solutions is not None:
+            for solution in solutions:
+                print '    = %f at %s' % (f(*solution), solution)
 
     present = set(term.monomial for f in expanded_equations for term in f)
     original = set(term.monomial for f in equations for term in f)
@@ -254,14 +282,18 @@ def solve_via_basis_selection(equations, expansion_monomials, lambda_poly):
         return
 
     if num_remaining <= 0:
-        print 'Error: The number of required plus nuissance monomials exceeds the number of equations. Add more expansions.'
+        print 'Error: The number of required plus nuissance monomials exceeds the number of equations. ' \
+              'Add more expansions.'
         return
 
     # Construct the three column blocks from the expanded equations
     c_nuissance, x_nuissance = matrix_form(expanded_equations, nuissance)
     c_required, x_required = matrix_form(expanded_equations, required)
     c_permissible, x_permissible = matrix_form(expanded_equations, permissible)
-    c_complete = np.hstack((c_nuissance, c_required, c_permissible))
+
+    # Construct the complete coefficient matrix, making sure to cast to float (very important)
+    c_complete = np.hstack((c_nuissance, c_required, c_permissible)).astype(float)
+    x_complete = np.hstack((x_nuissance, x_required, x_permissible))
 
     print 'c_nuissance:'
     print spy(c_nuissance)
@@ -273,9 +305,14 @@ def solve_via_basis_selection(equations, expansion_monomials, lambda_poly):
     print 'Full system:'
     print spy(c_complete)
 
+    if solutions is not None:
+        for s in solutions:
+            print '  Evaluated at %s: %s' % (s, np.dot(c_complete, evaluate_poly_vector(x_complete, s, float)))
+
     # Eliminate the nuissance monomials
     u_complete, rows_used = partial_row_echelon_form(c_complete, ncols=nn)
     c_elim = u_complete[rows_used:, nn:]
+    x_elim = x_complete[nn:]
 
     print 'Used %d rows to eliminate %d nuissance monomials' % (rows_used, nn)
 
@@ -285,6 +322,10 @@ def solve_via_basis_selection(equations, expansion_monomials, lambda_poly):
     print 'After dropping nuissance monomials:'
     print spy(c_elim)
 
+    if solutions is not None:
+        for s in solutions:
+            print '  Evaluated at %s: %s' % (s, np.dot(c_elim, evaluate_poly_vector(x_elim, s, float)))
+
     # Put the required monomial columns on row echelon form
     u_elim, rows_used = partial_row_echelon_form(c_elim, ncols=nr, tol=1e-15)
 
@@ -292,6 +333,13 @@ def solve_via_basis_selection(equations, expansion_monomials, lambda_poly):
 
     print 'After second LU:'
     print spy(u_elim)
+    print u_elim
+    print 'original:'
+    print c_elim
+
+    if solutions is not None:
+        for s in solutions:
+            print '  Evaluated at %s: %s' % (s, np.dot(u_elim, evaluate_poly_vector(x_elim, s, float)))
 
     # First block division
     u_r = u_elim[:nr, :nr]
@@ -307,11 +355,10 @@ def solve_via_basis_selection(equations, expansion_monomials, lambda_poly):
         print 'Failed to eliminate the following required monomials:'
         for i in defficient_indices:
             print '  ', x_required[i]
-        #return
 
     # Factorize c_p2
-    q, r, perm = scipy.linalg.qr(c_p2, pivoting=True)
-    p = permutation_matrix(perm)
+    q, r, ordering = scipy.linalg.qr(c_p2, pivoting=True)
+    p = permutation_matrix(ordering)
 
     x_reordered = np.dot(p.T, x_permissible)
     c_p1_p = np.dot(c_p1, p)
@@ -319,6 +366,10 @@ def solve_via_basis_selection(equations, expansion_monomials, lambda_poly):
 
     print 'After QR:'
     print spy(r)
+
+    if solutions is not None:
+        for s in solutions:
+            print '  Evaluated at %s: %s' % (s, np.dot(r, evaluate_poly_vector(x_reordered, s, float)))
 
     success = False
     max_eliminations = min(len(expanded_equations) - rows_used - nr, len(present) - nn - nr)
@@ -353,7 +404,6 @@ def solve_via_basis_selection(equations, expansion_monomials, lambda_poly):
         else:
             print 'Conditioning is poor at ne=%d (condition=%f, basis=%s)' % (ne, condition, x_reordered[ne:])
 
-
     if not success:
         print 'Could not find a valid basis'
         return
@@ -375,6 +425,15 @@ def solve_via_basis_selection(equations, expansion_monomials, lambda_poly):
 
     print 'Basis:'
     print map(Term.from_monomial, basis)
+
+    print 'Basis * p'
+    for bi, row in zip(basis, action):
+        lhs = bi*lambda_poly
+        rhs = sum(as_polynomial(bj, len(vars)) * aj for bj, aj in zip(basis, row))
+        print '  %s * (%s) = %s = %s' % (as_term(bi, len(vars)), lambda_poly, lhs, rhs)
+        if solutions is not None:
+            for s in solutions:
+                print '    at %s, lhs=%s, rhs=%s' % (s, lhs(*s), rhs(*s))
 
     print 'Action matrix:'
     print action
