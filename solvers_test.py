@@ -38,7 +38,7 @@ class SolverTestCase(unittest.TestCase):
         equations = [
             (x+2)**2 + (y+2)**2 - 25,
             (x-6)**2 + (y+2)**2 - 25,
-            ]
+        ]
         expansion_monomials = [
             [x, y, x*y, x*x, y*y, x*x*y],
             [x, y, x*y, x*x, y*y, x*x*y]
@@ -56,12 +56,12 @@ class SolverTestCase(unittest.TestCase):
             (x-6)**2 + (y-1)**2 + (z-1)**2 - 25,
             (x-1)**2 + (y-6)**2 + (z-1)**2 - 25,
             (x-1)**2 + (y-1)**2 + (z-6)**2 - 25,
-            ]
+        ]
         expansion_monomials = [
             all_monomials((x, y, z), degree=2),
             all_monomials((x, y, z), degree=2),
             all_monomials((x, y, z), degree=2),
-            ]
+        ]
         expected_solutions = [(1, 1, 1)]
         lambda_poly = x + 2*y + 3*z + 4
         result = solvers.solve_via_basis_selection(equations,
@@ -78,7 +78,7 @@ class SolverTestCase(unittest.TestCase):
             all_monomials(coords, degree=1),
             all_monomials(coords, degree=1),
             all_monomials(coords, degree=1),
-            ]
+        ]
         lambda_poly = sum(xi * (i + 1) for i, xi in enumerate(coords)) + 1
         result = solvers.solve_via_basis_selection(
             equations,
