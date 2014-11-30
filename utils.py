@@ -115,10 +115,11 @@ def essential_matrix_from_relative_pose(Rrel, prel):
 
 def list_depth(x):
     """Determine how many levels of nested lists are inside x."""
-    depth = 0
     while True:
         try:
-            x = next(iter(x))
-            depth += 1
+            if len(x) == 0:
+                return 1
+            else:
+                return max(map(list_depth, x)) + 1
         except TypeError:
-            return depth
+            return 0
