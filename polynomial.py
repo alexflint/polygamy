@@ -1076,19 +1076,27 @@ def remainder(f, H, ordering=None):
     return remainder
 
 
-def matrix_form(F, ordering=None):
+def matrix_form(fs, ordering=None):
     """Put the system of equations (f1=0,...,fn=0) into matrix form as
     C * X = 0, where C is a matrix of coefficients and X is a matrix
     of monomials."""
-    monomials = list(set(term.monomial for f in F for term in f))
+    monomials = list(set(term.monomial for f in fs for term in f))
     if isinstance(ordering, MonomialOrdering):
-        monomials = sorted(monomials, key=lambda monomial: ComparableTerm(ordering, Term(1,monomial)))
+        monomials = sorted(monomials, key=lambda m: ComparableTerm(ordering, Term(1, m)))
     elif ordering is not None:
         assert all(isinstance(x, tuple) for x in ordering), 'ordering should be a list of tuples'
         monomials = ordering
-    X = [as_polynomial(monomial, F[0].num_vars) for monomial in monomials]
-    C = np.asarray([[f.coefficients[monomial] for monomial in monomials] for f in F])
-    return C, X
+
+    column_map = {monomial: index for index, monomial in enumerate(monomials)}
+    x = [as_polynomial(monomial, fs[0].num_vars) for monomial in monomials]
+    c = np.zeros((len(fs), len(monomials)))
+    for row, f in enumerate(fs):
+        for term in f:
+            column = column_map.get(term.monomial, None)
+            if column is not None:
+                c[row, column] = term.coef
+
+    return c, x
 
 
 def quadratic_form(polynomial):
