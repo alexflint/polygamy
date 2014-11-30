@@ -1,5 +1,3 @@
-__author__ = 'alexflint'
-
 import unittest
 
 from ring_test import RingTest

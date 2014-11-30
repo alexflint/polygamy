@@ -1,12 +1,10 @@
-__author__ = 'alexflint'
-
 import numpy as np
 
 inf = float('inf')
 
 
 def count_sign_changes(ys):
-    signs = [ cmp(y,0) for y in ys if y != 0 ]  # ignore all zero evaluations
+    signs = [cmp(y,0) for y in ys if y != 0]  # ignore all zero evaluations
     return sum(signs[i] != signs[i+1] for i in range(len(signs)-1))
 
 
@@ -50,6 +48,7 @@ def binary_search_continuous(f, target, low, high):
         else:
             high = x
 
+
 def isolate_roots(polynomial, lower=-inf, upper=inf):
     '''Given a polynomial with N roots, return N+1 floating
     (K[0],...,K[n]) point numbers such that the i-th root is between
@@ -83,6 +82,7 @@ def isolate_roots(polynomial, lower=-inf, upper=inf):
 
     return brackets
 
+
 def bisect_bracket(f, a, b, tol, threshold=1e-10):
     '''Given a function f with a root between A and B, return a new
     interval (C,D) containing the root such that D-C < TOL.'''
@@ -111,7 +111,6 @@ def bisect_bracket(f, a, b, tol, threshold=1e-10):
     return (a,b)
 
 
-
 def polish_root(polynomial, root, **kwargs):
     import scipy.optimize
     assert polynomial.num_vars == 1
@@ -137,6 +136,7 @@ def solve_via_sturm(polynomial, lower=-inf, upper=inf, tol=1e-8):
         brackets.append((a,b))
     return roots, brackets
 
+
 def companion_matrix(polynomial):
     '''Compute the companion matrix for a univariate polynomial.'''
     assert polynomial.num_vars == 1
@@ -148,6 +148,7 @@ def companion_matrix(polynomial):
         if term.total_degree != d:
             C[term.total_degree,-1] = -float(term.coef / lt.coef)
     return C
+
 
 def solve_via_companion(polynomial):
     # Compute the companion matrix

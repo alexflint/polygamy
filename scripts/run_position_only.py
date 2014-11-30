@@ -7,7 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d.axes3d import Axes3D
 
-import spline
+import bezier
 from utils import cayley, normalized, skew, skew_jacobian, essential_matrix
 from polynomial import Polynomial, quadratic_form
 from lie import SO3
@@ -18,10 +18,10 @@ class BezierCurve(object):
         self._controls = controls
 
     def evaluate(self, t):
-        return spline.bezier(self._controls, t)
+        return bezier.bezier(self._controls, t)
 
     def second_derivative(self, t):
-        return spline.bezier_second_deriv(self._controls, t)
+        return bezier.bezier_second_deriv(self._controls, t)
 
 
 class SensorModel(object):
@@ -101,13 +101,13 @@ def dots(*args):
 
 def accel_residual(pos_controls, accel_bias, gravity,
                    timestamp, accel_reading, orientation):
-    global_accel = spline.zero_offset_bezier_second_deriv(pos_controls, timestamp)
+    global_accel = bezier.zero_offset_bezier_second_deriv(pos_controls, timestamp)
     apparent_accel = np.dot(orientation, global_accel + gravity) + accel_bias
     return apparent_accel - accel_reading
 
 
 def accel_jacobian(bezier_order, timestamp, orientation):
-    bezier_mat = spline.zero_offset_bezier_second_deriv_mat(timestamp, bezier_order, 3)
+    bezier_mat = bezier.zero_offset_bezier_second_deriv_mat(timestamp, bezier_order, 3)
     return np.hstack((np.dot(orientation, bezier_mat), np.eye(3), orientation))
 
 
@@ -123,8 +123,8 @@ def evaluate_accel_jacobians(bezier_order, accel_timestamps, accel_orientations)
 
 
 def epipolar_residual(pos_controls, ti, tj, zi, zj, Ri, Rj):
-    pi = spline.zero_offset_bezier(pos_controls, ti)
-    pj = spline.zero_offset_bezier(pos_controls, tj)
+    pi = bezier.zero_offset_bezier(pos_controls, ti)
+    pj = bezier.zero_offset_bezier(pos_controls, tj)
     E = essential_matrix(Ri, pi, Rj, pj)
     return dots(zj, E, zi)
 
@@ -132,8 +132,8 @@ def epipolar_residual(pos_controls, ti, tj, zi, zj, Ri, Rj):
 def epipolar_jacobian(bezier_order, ti, tj, zi, zj, Ri, Rj):
     Rrel = np.dot(Rj, Ri.T)
     zzt = np.outer(zj, zi).flatten()
-    Ai = spline.zero_offset_bezier_mat(ti, bezier_order, 3)
-    Aj = spline.zero_offset_bezier_mat(tj, bezier_order, 3)
+    Ai = bezier.zero_offset_bezier_mat(ti, bezier_order, 3)
+    Aj = bezier.zero_offset_bezier_mat(tj, bezier_order, 3)
     return dots(zzt, diagify(Rrel, 3), skew_jacobian(), np.dot(Ri, Aj - Ai))
 
 
@@ -254,17 +254,17 @@ def run_simulation():
 
     true_landmarks = np.random.randn(num_landmarks, 3)
 
-    true_frame_cayleys = np.array([spline.zero_offset_bezier(true_rot_controls, t) for t in frame_times])
+    true_frame_cayleys = np.array([bezier.zero_offset_bezier(true_rot_controls, t) for t in frame_times])
     true_frame_orientations = np.array(map(cayley, true_frame_cayleys))
-    true_frame_positions = np.array([spline.zero_offset_bezier(true_pos_controls, t) for t in frame_times])
+    true_frame_positions = np.array([bezier.zero_offset_bezier(true_pos_controls, t) for t in frame_times])
 
-    true_imu_cayleys = np.array([spline.zero_offset_bezier(true_rot_controls, t) for t in imu_times])
+    true_imu_cayleys = np.array([bezier.zero_offset_bezier(true_rot_controls, t) for t in imu_times])
     true_imu_orientations = np.array(map(cayley, true_imu_cayleys))
 
     true_gravity_magnitude = 9.8
     true_gravity = normalized(np.random.rand(3)) * true_gravity_magnitude
     true_accel_bias = np.random.randn(3)
-    true_global_accels = np.array([spline.zero_offset_bezier_second_deriv(true_pos_controls, t) for t in imu_times])
+    true_global_accels = np.array([bezier.zero_offset_bezier_second_deriv(true_pos_controls, t) for t in imu_times])
     true_accels = np.array([np.dot(R, a + true_gravity) + true_accel_bias
                             for R, a in zip(true_imu_orientations, true_global_accels)])
 
@@ -345,7 +345,7 @@ def run_simulation():
     A, b, k = quadratic_form(cost)
     estimated_vars = np.squeeze(np.linalg.solve(A*2, -b))
     estimated_pos_controls = np.reshape(estimated_vars[position_offs:position_offs+(bezier_degree-1)*3], (bezier_degree-1, 3))
-    estimated_positions = np.array([spline.zero_offset_bezier(estimated_pos_controls, t) for t in frame_times])
+    estimated_positions = np.array([bezier.zero_offset_bezier(estimated_pos_controls, t) for t in frame_times])
     estimated_accel_bias = np.asarray(estimated_vars[accel_bias_offset:accel_bias_offset+3])
     estimated_gravity = np.asarray(estimated_vars[gravity_offset:gravity_offset+3])
     re_estimated_gravity = normalized(estimated_gravity) * true_gravity_magnitude
@@ -370,8 +370,8 @@ def run_simulation():
     ax = fig.add_subplot(1, 2, 1, projection='3d')
 
     ts = np.linspace(0, 1, 100)
-    true_ps = np.array([spline.zero_offset_bezier(true_pos_controls, t) for t in ts])
-    estimated_ps = np.array([spline.zero_offset_bezier(estimated_pos_controls, t) for t in ts])
+    true_ps = np.array([bezier.zero_offset_bezier(true_pos_controls, t) for t in ts])
+    estimated_ps = np.array([bezier.zero_offset_bezier(estimated_pos_controls, t) for t in ts])
 
     ax.plot(true_ps[:, 0], true_ps[:, 1], true_ps[:, 2], '-b')
     ax.plot(estimated_ps[:, 0], estimated_ps[:, 1], estimated_ps[:, 2], '-r')
@@ -415,17 +415,17 @@ def run_simulation_nonsymbolic():
 
     true_landmarks = np.random.randn(num_landmarks, 3)
 
-    true_frame_cayleys = np.array([spline.zero_offset_bezier(true_rot_controls, t) for t in frame_times])
+    true_frame_cayleys = np.array([bezier.zero_offset_bezier(true_rot_controls, t) for t in frame_times])
     true_frame_orientations = np.array(map(cayley, true_frame_cayleys))
-    true_frame_positions = np.array([spline.zero_offset_bezier(true_pos_controls, t) for t in frame_times])
+    true_frame_positions = np.array([bezier.zero_offset_bezier(true_pos_controls, t) for t in frame_times])
 
-    true_imu_cayleys = np.array([spline.zero_offset_bezier(true_rot_controls, t) for t in accel_timestamps])
+    true_imu_cayleys = np.array([bezier.zero_offset_bezier(true_rot_controls, t) for t in accel_timestamps])
     true_imu_orientations = np.array(map(cayley, true_imu_cayleys))
 
     true_gravity_magnitude = 9.8
     true_gravity = normalized(np.random.rand(3)) * true_gravity_magnitude
     true_accel_bias = np.random.randn(3)
-    true_global_accels = np.array([spline.zero_offset_bezier_second_deriv(true_pos_controls, t) for t in accel_timestamps])
+    true_global_accels = np.array([bezier.zero_offset_bezier_second_deriv(true_pos_controls, t) for t in accel_timestamps])
     true_accels = np.array([np.dot(R, a + true_gravity) + true_accel_bias
                             for R, a in zip(true_imu_orientations, true_global_accels)])
 
@@ -498,7 +498,7 @@ def run_simulation_nonsymbolic():
     #
 
     estimated_pos_controls = np.reshape(estimated_vars[position_offs:position_offs+(bezier_degree-1)*3], (bezier_degree-1, 3))
-    estimated_positions = np.array([spline.zero_offset_bezier(estimated_pos_controls, t) for t in frame_times])
+    estimated_positions = np.array([bezier.zero_offset_bezier(estimated_pos_controls, t) for t in frame_times])
     estimated_accel_bias = np.asarray(estimated_vars[accel_bias_offset:accel_bias_offset+3])
     estimated_gravity = np.asarray(estimated_vars[gravity_offset:gravity_offset+3])
     re_estimated_gravity = normalized(estimated_gravity) * true_gravity_magnitude
@@ -523,8 +523,8 @@ def run_simulation_nonsymbolic():
     ax = fig.add_subplot(1, 2, 1, projection='3d')
 
     ts = np.linspace(0, 1, 100)
-    true_ps = np.array([spline.zero_offset_bezier(true_pos_controls, t) for t in ts])
-    estimated_ps = np.array([spline.zero_offset_bezier(estimated_pos_controls, t) for t in ts])
+    true_ps = np.array([bezier.zero_offset_bezier(true_pos_controls, t) for t in ts])
+    estimated_ps = np.array([bezier.zero_offset_bezier(estimated_pos_controls, t) for t in ts])
 
     ax.plot(true_ps[:, 0], true_ps[:, 1], true_ps[:, 2], '-b')
     ax.plot(estimated_ps[:, 0], estimated_ps[:, 1], estimated_ps[:, 2], '-r')
@@ -628,7 +628,7 @@ def run_from_data():
     A, b, k = quadratic_form(cost)
     estimated_vars = np.squeeze(np.linalg.solve(A*2, -b))
     estimated_pos_controls = np.reshape(estimated_vars[position_offs:position_offs+(bezier_degree-1)*3], (bezier_degree-1, 3))
-    estimated_positions = np.array([spline.zero_offset_bezier(estimated_pos_controls, t) for t in frame_timestamps])
+    estimated_positions = np.array([bezier.zero_offset_bezier(estimated_pos_controls, t) for t in frame_timestamps])
     estimated_accel_bias = np.asarray(estimated_vars[accel_bias_offset:accel_bias_offset+3])
     estimated_gravity = np.asarray(estimated_vars[gravity_offset:gravity_offset+3])
 
@@ -643,7 +643,7 @@ def run_from_data():
     ax = fig.add_subplot(1, 2, 1, projection='3d')
 
     ts = np.linspace(0, 1, 100)
-    estimated_ps = np.array([spline.zero_offset_bezier(estimated_pos_controls, t) for t in ts])
+    estimated_ps = np.array([bezier.zero_offset_bezier(estimated_pos_controls, t) for t in ts])
     ax.plot(estimated_ps[:, 0], estimated_ps[:, 1], estimated_ps[:, 2], '-r')
 
     ax.set_xlabel('x')

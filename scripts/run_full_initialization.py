@@ -3,7 +3,7 @@ from fractions import Fraction
 
 import numpy as np
 
-from spline import zero_offset_bezier, zero_offset_bezier_second_deriv
+from bezier import zero_offset_bezier, zero_offset_bezier_second_deriv
 from utils import cayley, cayley_mat, cayley_denom, normalized, essential_matrix_from_relative_pose
 from polynomial import Polynomial
 from polynomial_io import write_polynomials, write_solution

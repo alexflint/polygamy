@@ -9,7 +9,7 @@ from mpl_toolkits.mplot3d.axes3d import Axes3D
 
 from polynomial import Polynomial, matrix_form, quadratic_form
 from polynomial_io import load_polynomials, load_functions,load_solution, write_solution, write_polynomials
-from spline import zero_offset_bezier, zero_offset_bezier_second_deriv
+from bezier import zero_offset_bezier, zero_offset_bezier_second_deriv
 from utils import cayley, cayley_mat, cayley_denom, evaluate_array, essential_matrix, normalized
 from lie import SO3
 

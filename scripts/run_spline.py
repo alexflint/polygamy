@@ -5,7 +5,7 @@ from fractions import Fraction
 import numpy as np
 
 from polynomial import *
-from spline import *
+from bezier import *
 import action
 import multivariate
 
