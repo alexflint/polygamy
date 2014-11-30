@@ -4,7 +4,7 @@ inf = float('inf')
 
 
 def count_sign_changes(ys):
-    signs = [cmp(y,0) for y in ys if y != 0]  # ignore all zero evaluations
+    signs = [cmp(y, 0) for y in ys if y != 0]  # ignore all zero evaluations
     return sum(signs[i] != signs[i+1] for i in range(len(signs)-1))
 
 

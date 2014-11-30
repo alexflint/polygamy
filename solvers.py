@@ -3,9 +3,10 @@ import fractions
 import numpy as np
 import scipy.linalg
 
+import utils
 import echelon
 from polynomial import Polynomial, Term, evaluate_monomial, gbasis, matrix_form, GrevlexOrdering, LexOrdering,\
-    as_term, as_polynomial, product
+    as_term, as_polynomial, as_monomial, product
 
 
 class SolutionSet(object):
@@ -96,21 +97,31 @@ def solve_monomial_equations(monomials, values):
 
 def solve_via_basis_selection(equations, expansion_monomials, lambda_poly, diagnostic_solutions=None,
                               include_grobner=False, verbosity=1):
+    ROW_ECHELON_TOLERANCE = 1e-10
     nvars = lambda_poly.num_vars
 
-    print 'Equations:'
-    for f in equations:
-        print '  ', f
-        if diagnostic_solutions is not None:
+    if verbosity >= 1:
+        print 'Equations:'
+        for f in equations:
+            print '  ', f
+
+    if diagnostic_solutions is not None:
+        for f in equations:
             for solution in diagnostic_solutions:
                 val = f(*solution)
                 assert abs(val) < 1e-8, 'expected input equations to evaluate to zero at diagnostic solution'
 
     # Expand equations
     expanded_equations = list(equations)
-    for f, expansions in zip(equations, expansion_monomials):
-        for monomial in expansions:
-            expanded_equations.append(f * monomial)
+    if utils.list_depth(expansion_monomials) == 3:
+        assert len(equations) == len(expansion_monomials)
+        for f, expansions in zip(equations, expansion_monomials):
+            for monomial in expansions:
+                expanded_equations.append(f * monomial)
+    else:
+        for f in equations:
+            for monomial in expansion_monomials:
+                expanded_equations.append(f * monomial)
 
     # Add grobner basis if requested
     if include_grobner:
@@ -144,15 +155,15 @@ def solve_via_basis_selection(equations, expansion_monomials, lambda_poly, diagn
 
     # Compute permissible monomials
     permissible = set()
-    for m in original:
-        p_m = lambda_poly * m
+    for monomial in original:
+        p_m = lambda_poly * monomial
         if all(mi in present for mi in p_m.monomials):
-            permissible.add(m)
+            permissible.add(monomial)
 
     # Compute required monomials
     required = set()
-    for m in permissible:
-        p_m = lambda_poly * m
+    for monomial in permissible:
+        p_m = lambda_poly * monomial
         for mi in p_m.monomials:
             if mi not in permissible:
                 required.add(mi)
@@ -236,15 +247,14 @@ def solve_via_basis_selection(equations, expansion_monomials, lambda_poly, diagn
     # Now we can check that we have enough equations left because the number of rows used to put the required monomials
     # on row ehcelon form must always equal the number of required monomials.
     if len(c_elim) < nr:
-        raise PolynomialSolverError('the number of equations remaining after eliminating nuissance monomails is %d, '
-                                    'but we need at least %d to eliminate the required monomials.' %
-                                    (len(c_elim), nr))
+        raise PolynomialSolverError('there are %d equations remaining after eliminating nuissance monomails, '
+                                    'but we need %d to eliminate the required monomials.' % (len(c_elim), nr))
 
     # Put the required monomial columns on row echelon form
     try:
         u_elim, required_rows_used = echelon.partial_row_echelon_form(c_elim,
                                                                       ncols=nr,
-                                                                      tol=1e-15,
+                                                                      tol=ROW_ECHELON_TOLERANCE,
                                                                       allow_rank_defficient=False)
     except echelon.RowEchelonError as ex:
         idx_complete = ex.col + nn
@@ -257,16 +267,17 @@ def solve_via_basis_selection(equations, expansion_monomials, lambda_poly, diagn
 
     if verbosity >= 1:
         print 'Used %d rows to put %d required monomials on row echelon form' % (required_rows_used, nr)
-
-    if verbosity >= 2:
-        print 'After putting required monomials on row echelon form:'
-        print spy(u_elim)
+        if verbosity >= 2:
+            print spy(u_elim)
 
     if diagnostic_solutions is not None:
         for solution in diagnostic_solutions:
             values = np.dot(u_elim, evaluate_poly_vector(x_elim, solution, float))
             if verbosity >= 2:
                 print '  Evaluated at %s: %s' % (solution, values)
+            if np.abs(values).max() > 1e-8:
+                idx = np.abs(values).argmax()
+                raise DiagnosticError('expected equation %d to evaluate to zero but received %f' % (idx, values[idx]))
 
     # First block division
     u_r = u_elim[:nr, :nr]
@@ -299,6 +310,9 @@ def solve_via_basis_selection(equations, expansion_monomials, lambda_poly, diagn
             values = np.dot(r, evaluate_poly_vector(x_reordered, solution, float))
             if verbosity >= 2:
                 print '  Evaluated at %s: %s' % (solution, values)
+            if np.abs(values).max() > 1e-8:
+                idx = np.abs(values).argmax()
+                raise DiagnosticError('expected equation %d to evaluate to zero but received %f' % (idx, values[idx]))
 
     success = False
     max_eliminations = min(len(expanded_equations) - nuissance_rows_used - required_rows_used,
@@ -351,7 +365,7 @@ def solve_via_basis_selection(equations, expansion_monomials, lambda_poly, diagn
         print 'Basis size: ', len(basis)
 
     # Compute action matrix form for p*B
-    p_basis = [lambda_poly*m for m in basis]
+    p_basis = [lambda_poly*monomial for monomial in basis]
     action_b, _ = matrix_form(p_basis, basis)
     action_r, _ = matrix_form(p_basis, required + eliminated)
 
