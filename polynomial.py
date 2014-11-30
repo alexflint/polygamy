@@ -299,6 +299,8 @@ class Monomial(object):
 
     def format(self, use_superscripts=True):
         """Construct a string representation of this polynomial."""
+        if self.total_degree == 0:
+            return '1'
         strings = []
         for var_index, exponent in enumerate(self):
             if exponent >= 1:
@@ -457,14 +459,15 @@ class Term(object):
 
     def format(self, use_superscripts=True):
         """Construct a string representation of this polynomial."""
-        strings = []
         if self.total_degree == 0:
-            strings.append(str(self.coef))
-        elif self.coef == -1:
-            strings.append('-')
+            return str(self.coef)
+        prefix = ''
+        strings = []
+        if self.coef == -1:
+            prefix = '-'
         elif self.coef != 1:
             strings.append(str(self.coef))
-        for var_index,exponent in enumerate(self.monomial):
+        for var_index, exponent in enumerate(self.monomial):
             if exponent >= 1:
                 if len(self.monomial) <= 4:
                     var = 'xyzw'[var_index]
@@ -480,9 +483,9 @@ class Term(object):
                 else:
                     strings.append(var + '^' + str(exponent))
         if use_superscripts:
-            return ''.join(strings)
+            return prefix + ''.join(strings)
         else:
-            return '*'.join(strings)
+            return prefix + '*'.join(strings)
 
     def __unicode__(self):
         return self.format()
