@@ -984,6 +984,22 @@ class Polynomial(object):
             lt = self.leading_term()
             return cmp(lt.coef, 0) * (-1 if lt.monomial[0]%2 else 1)
 
+    def as_term(self):
+        """If this polynomial consists of just one term then return it, otherwise raise TypeError."""
+        if len(self) != 1:
+            raise TypeError("cannot convert a polynomial with %d terms to a single term" % len(self))
+        return self._term_dict.values()[0]
+
+    def as_monomial(self):
+        """If this polynomial consists of just one term and that term has a coefficient of 1 then return its monomial,
+        otherwise raise TypeError."""
+        if len(self) != 1:
+            raise TypeError("cannot convert a polynomial with %d terms to a single monomial" % len(self))
+        term = self._term_dict.values()[0]
+        if term.coef != 1:
+            raise TypeError("cannot convert a term with coef %s to a monomial" % term.coef)
+        return term.monomial
+
     def compile(self):
         """Return a python function that can be used to evaluate this
         polynomial quickly."""
