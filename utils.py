@@ -111,3 +111,14 @@ def essential_matrix(R1, p1, R2, p2):
 
 def essential_matrix_from_relative_pose(Rrel, prel):
     return np.dot(Rrel, skew(prel))
+
+
+def list_depth(x):
+    """Determine how many levels of nested lists are inside x."""
+    depth = 0
+    while True:
+        try:
+            x = next(iter(x))
+            depth += 1
+        except TypeError:
+            return depth
