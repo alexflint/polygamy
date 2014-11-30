@@ -29,7 +29,7 @@ def partial_lu(a, ncols):
     return p, ll, uu
 
 
-def partial_row_echelon_form(a, ncols, tol=1e-8):
+def partial_row_echelon_form(a, ncols, tol=1e-8, allow_rank_defficient=True):
     """Eliminate the first N columns of A, with row pivoting."""
     a = np.asarray(a)
     assert ncols <= a.shape[1]
@@ -43,8 +43,11 @@ def partial_row_echelon_form(a, ncols, tol=1e-8):
         pivot_row = row + np.argmax(np.abs(u[row:, col]))
         swap_rows(u, row, pivot_row)
         if abs(u[row, col]) < tol:
-            # this column is already eliminated, which is fine
-            u[row, col] = 0.
+            if allow_rank_defficient:
+                # this column is already eliminated, which is fine
+                u[row, col] = 0.
+            else:
+                raise RowEchelonError(col)
         else:
             u[row, col+1:] /= u[row, col]
             u[row, col] = 1.

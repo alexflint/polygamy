@@ -5,7 +5,7 @@ import scipy.linalg
 
 import echelon
 from polynomial import Polynomial, Term, evaluate_monomial, gbasis, matrix_form, GrevlexOrdering, LexOrdering,\
-    as_term, as_polynomial
+    as_term, as_polynomial, product
 
 
 class SolutionSet(object):
@@ -14,6 +14,12 @@ class SolutionSet(object):
 
 
 class PolynomialSolverError(Exception):
+    """Represents a failure of a solver to identify solutions to a polynomial system."""
+    pass
+
+
+class DiagnosticError(Exception):
+    """Represents a failure detected using known solutions to a system of polynomial equations."""
     pass
 
 
@@ -45,6 +51,10 @@ def permutation_matrix(p):
     return a
 
 
+def all_monomials(variables, degree):
+    return map(product, itertools.product(list(variables)+[1], repeat=degree))
+
+
 def evaluate_poly_vector(v, x, dtype):
     return np.array([vi(*x) for vi in v], dtype)
 
@@ -63,7 +73,6 @@ def solve_monomial_equations(monomials, values):
             naked_indices[monomial.index(1)] = i
 
     if all(i is not None for i in naked_indices):
-        print '  Solved monomial equations the simple way'
         yield np.take(values, naked_indices)
         return
 
@@ -85,15 +94,17 @@ def solve_monomial_equations(monomials, values):
                 yield x
 
 
-def solve_via_basis_selection(equations, expansion_monomials, lambda_poly, solutions=None, include_grobner=False):
+def solve_via_basis_selection(equations, expansion_monomials, lambda_poly, diagnostic_solutions=None,
+                              include_grobner=False, verbosity=1):
     nvars = lambda_poly.num_vars
 
     print 'Equations:'
     for f in equations:
         print '  ', f
-        if solutions is not None:
-            for solution in solutions:
-                print '    = %f at %s' % (f(*solution), solution)
+        if diagnostic_solutions is not None:
+            for solution in diagnostic_solutions:
+                val = f(*solution)
+                assert abs(val) < 1e-8, 'expected input equations to evaluate to zero at diagnostic solution'
 
     # Expand equations
     expanded_equations = list(equations)
@@ -101,20 +112,33 @@ def solve_via_basis_selection(equations, expansion_monomials, lambda_poly, solut
         for monomial in expansions:
             expanded_equations.append(f * monomial)
 
+    # Add grobner basis if requested
     if include_grobner:
         print 'Grobner basis:'
         gb_equations = [p.astype(fractions.Fraction) for p in equations]
-        for f in gbasis(gb_equations, GrevlexOrdering()):
-            print '  ', f
-            expanded_equations.append(f)
+        grobner_basis = gbasis(gb_equations, GrevlexOrdering())
+        expanded_equations.extend(grobner_basis)
+        if verbosity >= 1:
+            print 'Grobner basis size: %d' % len(gb_equations)
+            if verbosity >= 2:
+                for f in grobner_basis:
+                    print '  ', f
 
-    print 'Expanded equations:'
-    for f in expanded_equations:
-        print '  ', f
-        if solutions is not None:
-            for solution in solutions:
-                print '    = %f at %s' % (f(*solution), solution)
+    # Report expanded equations if requested
+    if verbosity >= 1:
+        print 'Num expanded equations: %d' % len(expanded_equations)
+        if verbosity >= 3:
+            for f in expanded_equations:
+                print '  ', f
 
+    # Test expanded equations against known solutions
+    if diagnostic_solutions is not None:
+        for f in expanded_equations:
+            for solution in diagnostic_solutions:
+                val = f(*solution)
+                assert abs(val) < 1e-8, 'expected input equations to evaluate to zero at diagnostic solution'
+
+    # Compute present monomials
     present = set(term.monomial for f in expanded_equations for term in f)
     original = set(term.monomial for f in equations for term in f)
 
@@ -139,22 +163,22 @@ def solve_via_basis_selection(equations, expansion_monomials, lambda_poly, solut
 
     nn = len(nuissance)
     nr = len(required)
-    npe = len(permissible)
-    num_remaining = len(expanded_equations) - len(required) - len(nuissance)
 
-    print 'Present monomials:', ', '.join(map(str, map(Term.from_monomial, present)))
-    print 'Permissible monomials:', ', '.join(map(str, map(Term.from_monomial, permissible)))
-    print 'Required monomials:', ', '.join(map(str, map(Term.from_monomial, required)))
-    print 'Nuissance monomials:', ', '.join(map(str, map(Term.from_monomial, nuissance)))
-    print 'Num equations:', len(expanded_equations)
-    print 'Num equations after eliminating:', num_remaining
+    # Report monomials in each set
+    print 'Present monomials (%d):' % len(present),\
+        ', '.join(map(str, map(Term.from_monomial, present)))
+    print 'Permissible monomials (%d):' % len(permissible),\
+        ', '.join(map(str, map(Term.from_monomial, permissible)))
+    print 'Required monomials (%d):' % len(required),\
+        ', '.join(map(str, map(Term.from_monomial, required)))
+    print 'Nuissance monomials (%d):' % len(nuissance),\
+        ', '.join(map(str, map(Term.from_monomial, nuissance)))
 
     if len(permissible) <= nvars:
         raise PolynomialSolverError('There are fewer permissible monomials than variables. Add more expansions.')
 
-    if num_remaining <= 0:
-        raise PolynomialSolverError('The number of required plus nuissance monomials exceeds the number of equations. '
-                                    'Add more expansions.')
+    # Do not try to check whether we have enough equations here because we do not yet know how many rows it will take
+    # to eliminate the nuissance monomials (typically it takes less than the number of nuissance monomials).
 
     # Construct the three column blocks from the expanded equations
     c_nuissance, x_nuissance = matrix_form(expanded_equations, nuissance)
@@ -163,50 +187,86 @@ def solve_via_basis_selection(equations, expansion_monomials, lambda_poly, solut
 
     # Construct the complete coefficient matrix, making sure to cast to float (very important)
     c_complete = np.hstack((c_nuissance, c_required, c_permissible)).astype(float)
-    x_complete = np.hstack((x_nuissance, x_required, x_permissible))
+    x_complete = x_nuissance + x_required + x_permissible
 
-    print 'c_nuissance:'
-    print spy(c_nuissance)
-    print 'c_required:'
-    print spy(c_required)
-    print 'c_permissible:'
-    print spy(c_permissible)
+    if verbosity >= 3:
+        print 'c_nuissance:'
+        print spy(c_nuissance)
+        print 'c_required:'
+        print spy(c_required)
+        print 'c_permissible:'
+        print spy(c_permissible)
 
-    print 'Full system:'
-    print spy(c_complete)
+    if verbosity >= 2:
+        print 'Full system:'
+        print spy(c_complete)
 
-    if solutions is not None:
-        for s in solutions:
-            print '  Evaluated at %s: %s' % (s, np.dot(c_complete, evaluate_poly_vector(x_complete, s, float)))
+    if diagnostic_solutions is not None:
+        for solution in diagnostic_solutions:
+            values = np.dot(c_complete, evaluate_poly_vector(x_complete, solution, float))
+            if verbosity >= 2:
+                print '  Evaluated at %s: %s' % (solution, values)
+            if np.abs(values).max() > 1e-8:
+                idx = np.abs(values).argmax()
+                raise DiagnosticError('expected equation %d to evaluate to zero but received %f' % (idx, values[idx]))
 
     # Eliminate the nuissance monomials
     u_complete, nuissance_rows_used = echelon.partial_row_echelon_form(c_complete, ncols=nn)
     c_elim = u_complete[nuissance_rows_used:, nn:]
     x_elim = x_complete[nn:]
 
-    print 'Used %d rows to eliminate %d nuissance monomials' % (nuissance_rows_used, nn)
+    if verbosity >= 1:
+        print 'Used %d rows to eliminate %d nuissance monomials, have %d left' % (nuissance_rows_used, nn, len(c_elim))
 
-    print 'After first LU:'
-    print spy(u_complete)
+    if verbosity >= 2:
+        print 'After putting nuissnace monomials on row echelon form:'
+        print spy(u_complete)
+        print 'After dropping nuissance monomials:'
+        print spy(c_elim)
 
-    print 'After dropping nuissance monomials:'
-    print spy(c_elim)
+    if diagnostic_solutions is not None:
+        for solution in diagnostic_solutions:
+            values = np.dot(c_elim, evaluate_poly_vector(x_elim, solution, float))
+            if verbosity >= 2:
+                print '  Evaluated at %s: %s' % (solution, values)
+            if np.abs(values).max() > 1e-8:
+                idx = np.abs(values).argmax()
+                raise DiagnosticError('expected equation %d to evaluate to zero but received %f' % (idx, values[idx]))
 
-    if solutions is not None:
-        for s in solutions:
-            print '  Evaluated at %s: %s' % (s, np.dot(c_elim, evaluate_poly_vector(x_elim, s, float)))
+    # Now we can check that we have enough equations left because the number of rows used to put the required monomials
+    # on row ehcelon form must always equal the number of required monomials.
+    if len(c_elim) < nr:
+        raise PolynomialSolverError('the number of equations remaining after eliminating nuissance monomails is %d, '
+                                    'but we need at least %d to eliminate the required monomials.' %
+                                    (len(c_elim), nr))
 
     # Put the required monomial columns on row echelon form
-    u_elim, required_rows_used = echelon.partial_row_echelon_form(c_elim, ncols=nr, tol=1e-15)
+    try:
+        u_elim, required_rows_used = echelon.partial_row_echelon_form(c_elim,
+                                                                      ncols=nr,
+                                                                      tol=1e-15,
+                                                                      allow_rank_defficient=False)
+    except echelon.RowEchelonError as ex:
+        idx_complete = ex.col + nn
+        complete_count = int(np.sum(c_complete[:, idx_complete] != 0))
+        elim_count = int(np.sum(c_elim[:, ex.col] != 0))
+        raise PolynomialSolverError(
+            'failed to eliminate required monomial %s (col %d), '
+            'which appeared in %d of %d expanded equations, and %d of %d after eliminating nuissance monomials' %
+            (x_elim[ex.col], ex.col, complete_count, len(c_complete), elim_count, len(c_elim)))
 
-    print 'Used %d rows to put %d required monomials on row echelon form' % (required_rows_used, nr)
+    if verbosity >= 1:
+        print 'Used %d rows to put %d required monomials on row echelon form' % (required_rows_used, nr)
 
-    print 'After second LU:'
-    print spy(u_elim)
+    if verbosity >= 2:
+        print 'After putting required monomials on row echelon form:'
+        print spy(u_elim)
 
-    if solutions is not None:
-        for s in solutions:
-            print '  Evaluated at %s: %s' % (s, np.dot(u_elim, evaluate_poly_vector(x_elim, s, float)))
+    if diagnostic_solutions is not None:
+        for solution in diagnostic_solutions:
+            values = np.dot(u_elim, evaluate_poly_vector(x_elim, solution, float))
+            if verbosity >= 2:
+                print '  Evaluated at %s: %s' % (solution, values)
 
     # First block division
     u_r = u_elim[:nr, :nr]
@@ -219,9 +279,8 @@ def solve_via_basis_selection(equations, expansion_monomials, lambda_poly, solut
     # required monomial submatrix, all those diagonal entries must be non-zero
     defficient_indices = np.flatnonzero(np.abs(np.diag(u_r)) < 1e-8)
     if len(defficient_indices) > 0:
-        print 'Failed to eliminate the following required monomials:'
-        for i in defficient_indices:
-            print '  ', x_required[i]
+        raise PolynomialSolverError('Failed to eliminate required monomials: ' +
+                                    ', '.join([str(x_required[i]) for i in defficient_indices]))
 
     # Factorize c_p2
     q, r, ordering = scipy.linalg.qr(c_p2, pivoting=True)
@@ -229,21 +288,23 @@ def solve_via_basis_selection(equations, expansion_monomials, lambda_poly, solut
 
     x_reordered = np.dot(p.T, x_permissible)
     c_p1_p = np.dot(c_p1, p)
-    assert c_p1_p.shape == (nr, npe)
+    assert c_p1_p.shape == (nr, len(permissible))
 
-    print 'After QR:'
-    print spy(r)
+    if verbosity >= 2:
+        print 'After QR:'
+        print spy(r)
 
-    if solutions is not None:
-        for s in solutions:
-            print '  Evaluated at %s: %s' % (s, np.dot(r, evaluate_poly_vector(x_reordered, s, float)))
+    if diagnostic_solutions is not None:
+        for solution in diagnostic_solutions:
+            values = np.dot(r, evaluate_poly_vector(x_reordered, solution, float))
+            if verbosity >= 2:
+                print '  Evaluated at %s: %s' % (solution, values)
 
     success = False
     max_eliminations = min(len(expanded_equations) - nuissance_rows_used - required_rows_used,
                            len(present) - nn - nr)
 
-    if max_eliminations <= 0:
-        print 'Too few rows present - something went wrong'
+    assert max_eliminations > 0, 'too few rows present - something went wrong'
 
     for ne in range(0, max_eliminations):
         # Compute the basis
@@ -251,9 +312,10 @@ def solve_via_basis_selection(equations, expansion_monomials, lambda_poly, solut
         basis = [poly.leading_term(LexOrdering()).monomial for poly in x_reordered[ne:]]
 
         # Check whether this basis is complete
-        rank = np.linalg.matrix_rank(basis)
+        rank = int(np.linalg.matrix_rank(basis))
         if rank < nvars:
-            print 'Basis is incomplete at ne=%d (rank=%d, basis=%s)' % (ne, rank, x_reordered[ne:])
+            if verbosity >= 1:
+                print 'Basis is incomplete at ne=%d (rank=%d, basis=%s)' % (ne, rank, x_reordered[ne:])
             continue
 
         # Form c1, c2
@@ -271,20 +333,22 @@ def solve_via_basis_selection(equations, expansion_monomials, lambda_poly, solut
         condition = np.linalg.cond(c1)
         if condition < 1e+8:
             success = True
-            print 'Success at ne=%d (condition=%f)' % (ne, condition)
+            if verbosity >= 1:
+                print 'Success at ne=%d (condition=%f)' % (ne, condition)
             break
-        else:
+        elif verbosity >= 1:
             print 'Conditioning is poor at ne=%d (condition=%f, basis=%s)' % (ne, condition, x_reordered[ne:])
 
     if not success:
         raise PolynomialSolverError('Could not find a valid basis')
 
     # Report
-    print 'Num monomials: ', len(present)
-    print 'Num nuissance: ', len(nuissance)
-    print 'Num required: ', len(required)
-    print 'Num eliminated by qr: ', ne
-    print 'Basis size: ', len(basis)
+    if verbosity >= 1:
+        print 'Num monomials: ', len(present)
+        print 'Num nuissance: ', len(nuissance)
+        print 'Num required: ', len(required)
+        print 'Num eliminated by qr: ', ne
+        print 'Basis size: ', len(basis)
 
     # Compute action matrix form for p*B
     p_basis = [lambda_poly*m for m in basis]
@@ -294,20 +358,30 @@ def solve_via_basis_selection(equations, expansion_monomials, lambda_poly, solut
     soln = np.linalg.solve(c1, c2)
     action = action_b - np.dot(action_r, soln)
 
-    print 'Basis:'
-    print map(Term.from_monomial, basis)
+    if verbosity >= 1:
+        print 'Basis:'
+        print map(Term.from_monomial, basis)
 
-    print 'Basis * p'
+    if verbosity >= 2:
+        print 'Basis * p'
     for bi, row in zip(basis, action):
         lhs = bi*lambda_poly
         rhs = sum(as_polynomial(bj, nvars) * aj for bj, aj in zip(basis, row))
-        print '  %s * (%s) = %s = %s' % (as_term(bi, nvars), lambda_poly, lhs, rhs)
-        if solutions is not None:
-            for s in solutions:
-                print '    at %s, lhs=%s, rhs=%s' % (s, lhs(*s), rhs(*s))
+        if verbosity >= 2:
+            print '  %s * (%s) = %s = %s' % (as_term(bi, nvars), lambda_poly, lhs, rhs)
+        if diagnostic_solutions is not None:
+            for solution in diagnostic_solutions:
+                lvalue = lhs(*solution)
+                rvalue = rhs(*solution)
+                if verbosity >= 2:
+                    print '    at %s, lhs=%s, rhs=%s' % (solution, lvalue, rvalue)
+                if abs(lvalue - rvalue) > 1e-8:
+                    raise DiagnosticError('expected action equation lhs (=%f) to match rhs (=%f) at %s' %
+                                          (lvalue, rvalue, solution))
 
-    print 'Action matrix:'
-    print action
+    if verbosity >= 2:
+        print 'Action matrix:'
+        print action
 
     # Find indices within basis
     unit_index = basis.index(Polynomial.constant(1, nvars))
@@ -316,32 +390,35 @@ def solve_via_basis_selection(equations, expansion_monomials, lambda_poly, solut
     # Compute eigenvalues and eigenvectors
     eigvals, eigvecs = np.linalg.eig(action)
 
-    print 'Eigenvectors:'
-    print eigvecs
+    if verbosity >= 2:
+        print 'Eigenvectors:'
+        print eigvecs
 
     # Divide out the unit monomial row
     nrm = eigvecs[unit_index]
     mask = np.abs(nrm) > 1e-8
     monomial_values = (eigvecs[:, mask] / eigvecs[unit_index][mask]).T
 
-    print 'Normalized eigenvectors:'
-    print monomial_values
+    if verbosity >= 2:
+        print 'Normalized eigenvectors:'
+        print monomial_values
 
     # Test each solution
     solutions = []
     for values in monomial_values:
         #candidate = [eigvec[i]/eigvec[unit_index] for i in var_indices]
         for solution in solve_monomial_equations(basis, values):
-            print 'Candidate solution:', solution
             values = [f(*solution) for f in equations]
-            print '  System values:', values
+            if verbosity >= 1:
+                print 'Candidate solution: %s -> Values = %s' % (solution, values)
             if np.linalg.norm(values) < 1e-8:
                 solutions.append(solution)
 
     # Report final solutions
     base_vars = Polynomial.coordinates(lambda_poly.num_vars)
-    print 'Solutions:'
-    for solution in solutions:
-        print '  ' + ' '.join('%s=%-10.4f' % (var, val) for var, val in zip(base_vars, solution))
+    if verbosity >= 1:
+        print 'Solutions:'
+        for solution in solutions:
+            print '  ' + ' '.join('%s=%s' % (var, val) for var, val in zip(base_vars, solution))
 
     return SolutionSet(solutions)

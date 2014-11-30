@@ -2,12 +2,9 @@ import itertools
 import unittest
 import numpy as np
 
-from polynomial import Polynomial, ideal_from_variety, product
+from polynomial import Polynomial, ideal_from_variety
 import solvers
-
-
-def all_monomials(variables, degree):
-    return map(product, itertools.product(list(variables)+[1], repeat=degree))
+import utils
 
 
 class SolverTestCase(unittest.TestCase):
@@ -47,7 +44,7 @@ class SolverTestCase(unittest.TestCase):
         result = solvers.solve_via_basis_selection(equations,
                                                    expansion_monomials,
                                                    x+2*y-3,
-                                                   solutions=expected_solutions)
+                                                   diagnostic_solutions=expected_solutions)
         self.assert_solutions_found(result, expected_solutions)
 
     def test_three_circles(self):
@@ -58,16 +55,16 @@ class SolverTestCase(unittest.TestCase):
             (x-1)**2 + (y-1)**2 + (z-6)**2 - 25,
         ]
         expansion_monomials = [
-            all_monomials((x, y, z), degree=2),
-            all_monomials((x, y, z), degree=2),
-            all_monomials((x, y, z), degree=2),
+            solvers.all_monomials((x, y, z), degree=2),
+            solvers.all_monomials((x, y, z), degree=2),
+            solvers.all_monomials((x, y, z), degree=2),
         ]
         expected_solutions = [(1, 1, 1)]
         lambda_poly = x + 2*y + 3*z + 4
         result = solvers.solve_via_basis_selection(equations,
                                                    expansion_monomials,
                                                    lambda_poly,
-                                                   solutions=expected_solutions)
+                                                   diagnostic_solutions=expected_solutions)
         self.assert_solutions_found(result, expected_solutions)
 
     def test_synthetic_ideal(self):
@@ -75,16 +72,16 @@ class SolverTestCase(unittest.TestCase):
         equations = ideal_from_variety(zeros, ctype=float)
         coords = Polynomial.coordinates(len(zeros[0]))
         expansion_monomials = [
-            all_monomials(coords, degree=1),
-            all_monomials(coords, degree=1),
-            all_monomials(coords, degree=1),
+            solvers.all_monomials(coords, degree=1),
+            solvers.all_monomials(coords, degree=1),
+            solvers.all_monomials(coords, degree=1),
         ]
         lambda_poly = sum(xi * (i + 1) for i, xi in enumerate(coords)) + 1
         result = solvers.solve_via_basis_selection(
             equations,
             expansion_monomials,
             lambda_poly,
-            solutions=[zeros[0]])
+            diagnostic_solutions=[zeros[0]])
         self.assert_solutions_found(result, zeros)
 
     def test_three_vars(self):

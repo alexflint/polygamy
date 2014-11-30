@@ -1,8 +1,7 @@
-__author__ = 'alexflint'
-
 import scipy.optimize
 
 import polynomial
+
 
 def polish_root(polynomials, root, **kwargs):
     import scipy.optimize
