@@ -1,13 +1,14 @@
-import itertools
 import unittest
 import numpy as np
 
 from polynomial import Polynomial, ideal_from_variety
 import solvers
-import utils
 
 
 class SolverTestCase(unittest.TestCase):
+    def setUp(self):
+        np.set_printoptions(suppress=True, linewidth=200)
+
     def assert_solutions_found(self, result, expected_solutions, tol=1e-8):
         for x in expected_solutions:
             found = False
@@ -36,10 +37,7 @@ class SolverTestCase(unittest.TestCase):
             (x+2)**2 + (y+2)**2 - 25,
             (x-6)**2 + (y+2)**2 - 25,
         ]
-        expansion_monomials = [
-            [x, y, x*y, x*x, y*y, x*x*y],
-            [x, y, x*y, x*x, y*y, x*x*y]
-        ]
+        expansion_monomials = [x, y, x*y, x*x, y*y, x*x*y]
         expected_solutions = [(2, 1), (2, -5)]
         result = solvers.solve_via_basis_selection(equations,
                                                    expansion_monomials,
@@ -54,11 +52,7 @@ class SolverTestCase(unittest.TestCase):
             (x-1)**2 + (y-6)**2 + (z-1)**2 - 25,
             (x-1)**2 + (y-1)**2 + (z-6)**2 - 25,
         ]
-        expansion_monomials = [
-            solvers.all_monomials((x, y, z), degree=2),
-            solvers.all_monomials((x, y, z), degree=2),
-            solvers.all_monomials((x, y, z), degree=2),
-        ]
+        expansion_monomials = solvers.all_monomials((x, y, z), degree=2)
         expected_solutions = [(1, 1, 1)]
         lambda_poly = x + 2*y + 3*z + 4
         result = solvers.solve_via_basis_selection(equations,

@@ -56,7 +56,7 @@ def all_monomials(variables, degree):
     return map(product, itertools.product(list(variables)+[1], repeat=degree))
 
 
-def evaluate_poly_vector(v, x, dtype):
+def evaluate_poly_vector(v, x, dtype=float):
     return np.array([vi(*x) for vi in v], dtype)
 
 
@@ -99,6 +99,7 @@ def solve_via_basis_selection(equations, expansion_monomials, lambda_poly, diagn
                               include_grobner=False, verbosity=1):
     ROW_ECHELON_TOLERANCE = 1e-10
     nvars = lambda_poly.num_vars
+    lambda_poly = lambda_poly.astype(float)
 
     if verbosity >= 1:
         print 'Equations:'
@@ -214,7 +215,7 @@ def solve_via_basis_selection(equations, expansion_monomials, lambda_poly, diagn
 
     if diagnostic_solutions is not None:
         for solution in diagnostic_solutions:
-            values = np.dot(c_complete, evaluate_poly_vector(x_complete, solution, float))
+            values = np.dot(c_complete, evaluate_poly_vector(x_complete, solution))
             if verbosity >= 2:
                 print '  Evaluated at %s: %s' % (solution, values)
             if np.abs(values).max() > 1e-8:
@@ -237,7 +238,7 @@ def solve_via_basis_selection(equations, expansion_monomials, lambda_poly, diagn
 
     if diagnostic_solutions is not None:
         for solution in diagnostic_solutions:
-            values = np.dot(c_elim, evaluate_poly_vector(x_elim, solution, float))
+            values = np.dot(c_elim, evaluate_poly_vector(x_elim, solution))
             if verbosity >= 2:
                 print '  Evaluated at %s: %s' % (solution, values)
             if np.abs(values).max() > 1e-8:
@@ -272,7 +273,7 @@ def solve_via_basis_selection(equations, expansion_monomials, lambda_poly, diagn
 
     if diagnostic_solutions is not None:
         for solution in diagnostic_solutions:
-            values = np.dot(u_elim, evaluate_poly_vector(x_elim, solution, float))
+            values = np.dot(u_elim, evaluate_poly_vector(x_elim, solution))
             if verbosity >= 2:
                 print '  Evaluated at %s: %s' % (solution, values)
             if np.abs(values).max() > 1e-8:
@@ -307,7 +308,7 @@ def solve_via_basis_selection(equations, expansion_monomials, lambda_poly, diagn
 
     if diagnostic_solutions is not None:
         for solution in diagnostic_solutions:
-            values = np.dot(r, evaluate_poly_vector(x_reordered, solution, float))
+            values = np.dot(r, evaluate_poly_vector(x_reordered, solution))
             if verbosity >= 2:
                 print '  Evaluated at %s: %s' % (solution, values)
             if np.abs(values).max() > 1e-8:
@@ -322,8 +323,10 @@ def solve_via_basis_selection(equations, expansion_monomials, lambda_poly, diagn
 
     for ne in range(0, max_eliminations):
         # Compute the basis
-        eliminated = [poly.leading_term(LexOrdering()).monomial for poly in x_reordered[:ne]]
-        basis = [poly.leading_term(LexOrdering()).monomial for poly in x_reordered[ne:]]
+        x_eliminated = x_reordered[:ne]
+        eliminated = [poly.as_monomial() for poly in x_eliminated]
+        x_basis = x_reordered[ne:]
+        basis = [poly.as_monomial() for poly in x_basis]
 
         # Check whether this basis is complete
         rank = int(np.linalg.matrix_rank(basis))
@@ -364,23 +367,84 @@ def solve_via_basis_selection(equations, expansion_monomials, lambda_poly, diagn
         print 'Num eliminated by qr: ', ne
         print 'Basis size: ', len(basis)
 
-    # Compute action matrix form for p*B
-    p_basis = [lambda_poly*monomial for monomial in basis]
-    action_b, _ = matrix_form(p_basis, basis)
-    action_r, _ = matrix_form(p_basis, required + eliminated)
+    # Verify that c1 * basis + c2 * required = 0 at diagnostic solutions
+    if diagnostic_solutions is not None:
+        c_post = np.hstack((c1, c2))
+        x_post = np.hstack((x_required, x_eliminated, x_basis))
+        for solution in diagnostic_solutions:
+            values = np.dot(c_post, evaluate_poly_vector(x_post, solution))
+            if verbosity >= 2:
+                print '  Evaluated at %s: %s' % (solution, values)
+            if np.abs(values).max() > 1e-8:
+                idx = np.abs(values).argmax()
+                raise DiagnosticError('expected equation %d to evaluate to zero but received %f' % (idx, values[idx]))
 
-    soln = np.linalg.solve(c1, c2)
-    action = action_b - np.dot(action_r, soln)
-
+    # Report the basis
     if verbosity >= 1:
         print 'Basis:'
-        print map(Term.from_monomial, basis)
+        print map(as_monomial, basis)
+
+    # Compute lambda_poly * basis
+    p_basis = [lambda_poly*monomial for monomial in basis]
+    c_action_b, _ = matrix_form(p_basis, basis)
+    c_action_r, _ = matrix_form(p_basis, required + eliminated)
+
+    # Check that the monomials in p_basis are exactly basis+required+eliminated
+    known_monomials = set(basis + required + eliminated)
+    for i, p_bi in enumerate(p_basis):
+        for monomial in p_bi.monomials:
+            if not monomial in known_monomials:
+                raise PolynomialSolverError(
+                    '%s in lambda_poly*%s (basis element %d) was not in the basis, required, or eliminated set' % \
+                        (as_monomial(monomial), as_monomial(basis[i]), i))
+
+    # Check that lambda * b = action_b * b + action_r * r at solution
+    for bi, b_row, r_row in zip(basis, c_action_b, c_action_r):
+        assert len(r_row) == len(required + eliminated)
+        assert len(b_row) == len(basis)
+        lhs = bi*lambda_poly
+        rhs = (sum(ci*as_polynomial(ri, nvars, float) for ci, ri in zip(r_row, required+eliminated)) +
+               sum(ci*as_polynomial(bi, nvars, float) for ci, bi in zip(b_row, basis)))
+        if diagnostic_solutions is not None:
+            for solution in diagnostic_solutions:
+                lvalue = lhs(*solution)
+                rvalue = rhs(*solution)
+                if verbosity >= 2:
+                    print '    at %s, lhs=%s, rhs=%s' % (solution, lvalue, rvalue)
+                if abs(lvalue - rvalue) > 1e-8:
+                    raise DiagnosticError('expected action equation lhs (=%f) to match rhs (=%f) at %s:\n'
+                                          '  lhs=%s\n  rhs=%s' %
+                                          (lvalue, rvalue, solution, lhs, rhs))
+
+    # Compute action matrix form for lambda_poly * basis
+    soln = np.linalg.solve(c1, c2)
+    c_action = c_action_b - np.dot(c_action_r, soln)
 
     if verbosity >= 2:
-        print 'Basis * p'
-    for bi, row in zip(basis, action):
+        print 'Solution for required monomials:'
+        print soln
+        for row, monomial in zip(soln, required+eliminated):
+            print '  %s = - %s * basis {at points on variety}' % (as_monomial(monomial), row)
+
+    # Check that basis + soln * required = 0 at diagnostic solutions
+    if diagnostic_solutions is not None:
+        c_solved = np.hstack((np.eye(len(required) + len(eliminated)), soln))
+        for solution in diagnostic_solutions:
+            values = np.dot(c_solved, evaluate_poly_vector(x_post, solution))
+            if verbosity >= 2:
+                print '  Evaluated at %s: %s' % (solution, values)
+            if np.abs(values).max() > 1e-8:
+                idx = np.abs(values).argmax()
+                raise DiagnosticError('expected equation %d to evaluate to zero but received %f' % (idx, values[idx]))
+
+    # Check that lambda * b = action * b at solution (note that lambda is a polynomial, not a matrix here)
+    if verbosity >= 2:
+        print 'Basis * lambda:'
+    assert len(basis) == len(c_action)
+    for bi, row in zip(basis, c_action):
+        assert len(basis) == len(row)
         lhs = bi*lambda_poly
-        rhs = sum(as_polynomial(bj, nvars) * aj for bj, aj in zip(basis, row))
+        rhs = sum(cj * as_polynomial(bj, nvars, float) for cj, bj in zip(row, basis))
         if verbosity >= 2:
             print '  %s * (%s) = %s = %s' % (as_term(bi, nvars), lambda_poly, lhs, rhs)
         if diagnostic_solutions is not None:
@@ -390,18 +454,19 @@ def solve_via_basis_selection(equations, expansion_monomials, lambda_poly, diagn
                 if verbosity >= 2:
                     print '    at %s, lhs=%s, rhs=%s' % (solution, lvalue, rvalue)
                 if abs(lvalue - rvalue) > 1e-8:
-                    raise DiagnosticError('expected action equation lhs (=%f) to match rhs (=%f) at %s' %
-                                          (lvalue, rvalue, solution))
+                    raise DiagnosticError('expected action equation lhs (=%f) to match rhs (=%f) at %s:\n'
+                                          '  lhs=%s\n  rhs=%s' %
+                                          (lvalue, rvalue, solution, lhs, rhs))
 
     if verbosity >= 2:
         print 'Action matrix:'
-        print action
+        print c_action
 
     # Find indices within basis
     unit_index = basis.index(Polynomial.constant(1, nvars))
 
     # Compute eigenvalues and eigenvectors
-    eigvals, eigvecs = np.linalg.eig(action)
+    eigvals, eigvecs = np.linalg.eig(c_action)
 
     if verbosity >= 2:
         print 'Eigenvectors:'
