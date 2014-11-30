@@ -71,11 +71,7 @@ class SolverTestCase(unittest.TestCase):
         zeros = [[-2., -3., 5., 6.], [4.5, 5., -1., 8.]]
         equations = ideal_from_variety(zeros, ctype=float)
         coords = Polynomial.coordinates(len(zeros[0]))
-        expansion_monomials = [
-            solvers.all_monomials(coords, degree=1),
-            solvers.all_monomials(coords, degree=1),
-            solvers.all_monomials(coords, degree=1),
-        ]
+        expansion_monomials = solvers.all_monomials(coords, degree=1)
         lambda_poly = sum(xi * (i + 1) for i, xi in enumerate(coords)) + 1
         result = solvers.solve_via_basis_selection(
             equations,

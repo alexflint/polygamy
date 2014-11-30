@@ -399,7 +399,6 @@ def solve_via_basis_selection(equations, expansion_monomials, lambda_poly, diagn
 
     # Find indices within basis
     unit_index = basis.index(Polynomial.constant(1, nvars))
-    #var_indices = [basis.index(var) for var in vars]
 
     # Compute eigenvalues and eigenvectors
     eigvals, eigvecs = np.linalg.eig(action)

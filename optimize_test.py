@@ -7,7 +7,29 @@ import solvers
 import optimize
 
 
+def make_langrangian(objective, constraints):
+    ex_vars = Polynomial.coordinates(objective.num_vars + len(constraints))
+    orig_vars = ex_vars[:objective.num_vars]
+    lg_vars = ex_vars[objective.num_vars:]
+    return objective(*orig_vars) + sum(lg * c(*orig_vars) for lg, c in zip(lg_vars, constraints))
+
+
 class OptimizationTestCase(unittest.TestCase):
+    def test_optimize_2d(self):
+        np.random.seed(0)
+        x, y = Polynomial.coordinates(2, float)
+        fs = [
+            x*y + y*y,
+            x*x + y,
+            x*y
+        ]
+        true_vars = np.array([2., 5.])
+        cost = sum((f(x, y) - f(*true_vars)) ** 2 for f in fs)
+        expansions = 2  # solvers.all_monomials(sym_vars, 2) + [sym_vars[2]**3, sym_vars[0]**2*sym_vars[2]]
+        minima = optimize.minimize_globally(cost, expansions=expansions, verbosity=2,
+                                            diagnostic_solutions=[true_vars])
+
+
     def test_range_optimization_2d(self):
         np.random.seed(0)
 
@@ -23,26 +45,32 @@ class OptimizationTestCase(unittest.TestCase):
         cost = sum((zz - z)**2 for zz, z in zip(sym_ranges, true_ranges))
         constraints = [np.sum(np.square(base - sym_position)) - sym_range*sym_range
                        for base, sym_range in zip(bases, sym_ranges)]
-        gradients = cost.partial_derivatives()
+
+        lagrangian = make_langrangian(-cost, constraints)
+        gradients = lagrangian.partial_derivatives()
 
         print 'Cost:', cost
+        print 'Lagrangian:', lagrangian
         print 'Constraints:'
         for constraint in constraints:
             print '  ', constraint
+        print 'Gradients:'
+        for gradient in gradients:
+            print '  ', gradient
 
         print 'At ground truth:'
         print '  Cost = ', cost(*true_vars)
         print '  Constraints = ', utils.evaluate_array(constraints, *true_vars)
-        print '  Gradients = ', [p(*true_vars) for p in gradients]
+        #print '  Gradients = ', [p(*true_vars) for p in gradients]
 
-        minima = optimize.minimize_globally(cost, constraints, expansions=3, verbosity=2,
-                                            diagnostic_solutions=[true_vars])
+        expansions = 3  # solvers.all_monomials(sym_vars, 2) + [sym_vars[2]**3, sym_vars[0]**2*sym_vars[2]]
+        minima = optimize.minimize_globally(-lagrangian, [], expansions=expansions, verbosity=2,
+                                            diagnostic_solutions=[], include_grobner=False)
 
         error = np.linalg.norm(minima - true_position)
         print minima
         print true_position
         print 'Error:', error
-
 
     def test_estimate_orientation_9params(self):
         np.random.seed(0)
