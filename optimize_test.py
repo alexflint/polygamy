@@ -1,7 +1,7 @@
 import numpy as np
 import unittest
 
-from polynomial import Polynomial
+from polynomial import Polynomial, polynomial_jacobian
 import utils
 import solvers
 import optimize
@@ -19,16 +19,39 @@ class OptimizationTestCase(unittest.TestCase):
         np.random.seed(0)
         x, y = Polynomial.coordinates(2, float)
         fs = [
-            x*y + y*y,
-            x*x + y,
-            x*y
+            x+1,
+            y+1,
+            x*x,
         ]
-        true_vars = np.array([2., 5.])
-        cost = sum((f(x, y) - f(*true_vars)) ** 2 for f in fs)
-        expansions = 2  # solvers.all_monomials(sym_vars, 2) + [sym_vars[2]**3, sym_vars[0]**2*sym_vars[2]]
-        minima = optimize.minimize_globally(cost, expansions=expansions, verbosity=2,
-                                            diagnostic_solutions=[true_vars])
+        true_solution = np.array([2., 5.])
+        cost = sum((f(x, y) - f(*true_solution)) ** 2 for f in fs)
 
+        import matplotlib.pyplot as plt
+        dX, dY = np.meshgrid(np.linspace(-.1, .1, 50), np.linspace(-.1, .1, 50))
+        X = true_solution[0] + dX
+        Y = true_solution[1] + dY * 1j
+        Z = np.abs(cost(X, Y))
+        print np.min(Z), np.max(Z)
+        plt.contourf(dX, dY, Z, levels=np.logspace(np.log10(np.min(Z)), np.log10(np.max(Z)), 16))
+        plt.plot(0, 0, 'mx')
+        plt.show()
+        return
+
+        gradients = cost.partial_derivatives()
+        print 'Cost:', cost
+        print 'Residuals:'
+        for f in fs:
+            print f(x, y) - f(*true_solution)
+        print 'Gradients:'
+        for gradient in gradients:
+            print '  ', gradient(*true_solution)
+        print 'Jacobian:'
+        print polynomial_jacobian(fs)(*true_solution)
+        expansions = 3  # solvers.all_monomials(sym_vars, 2) + [sym_vars[2]**3, sym_vars[0]**2*sym_vars[2]]
+        minima = optimize.minimize_globally(cost, expansions=expansions, verbosity=2, constraints=fs[:2],
+                                            #diagnostic_solutions=[true_vars]
+        )
+        np.testing.assert_array_almost_equal(minima, true_solution)
 
     def test_range_optimization_2d(self):
         np.random.seed(0)

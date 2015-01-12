@@ -251,6 +251,11 @@ def solve_via_basis_selection(equations, expansion_monomials, lambda_poly, diagn
         raise PolynomialSolverError('there are %d equations remaining after eliminating nuissance monomails, '
                                     'but we need %d to eliminate the required monomials.' % (len(c_elim), nr))
 
+    # Check that c_elim[:, :nr] has full column rank
+    c_elim_rank = np.linalg.matrix_rank(c_elim[:, :nr])
+    if c_elim_rank < nr:
+        print 'c_elim has %d rows and rank %d but nr=%d, predicting LU will fail.' % (c_elim.shape[0], c_elim_rank, nr)
+
     # Put the required monomial columns on row echelon form
     try:
         u_elim, required_rows_used = echelon.partial_row_echelon_form(c_elim,
@@ -324,8 +329,8 @@ def solve_via_basis_selection(equations, expansion_monomials, lambda_poly, diagn
     for ne in range(0, max_eliminations):
         # Compute the basis
         x_eliminated = x_reordered[:ne]
-        eliminated = [poly.as_monomial() for poly in x_eliminated]
         x_basis = x_reordered[ne:]
+        eliminated = [poly.as_monomial() for poly in x_eliminated]
         basis = [poly.as_monomial() for poly in x_basis]
 
         # Check whether this basis is complete
@@ -359,6 +364,9 @@ def solve_via_basis_selection(equations, expansion_monomials, lambda_poly, diagn
     if not success:
         raise PolynomialSolverError('Could not find a valid basis')
 
+    x_dependent = np.hstack((x_required, x_eliminated))
+    dependent = required + eliminated
+
     # Report
     if verbosity >= 1:
         print 'Num monomials: ', len(present)
@@ -387,10 +395,10 @@ def solve_via_basis_selection(equations, expansion_monomials, lambda_poly, diagn
     # Compute lambda_poly * basis
     p_basis = [lambda_poly*monomial for monomial in basis]
     c_action_b, _ = matrix_form(p_basis, basis)
-    c_action_r, _ = matrix_form(p_basis, required + eliminated)
+    c_action_r, _ = matrix_form(p_basis, dependent)
 
     # Check that the monomials in p_basis are exactly basis+required+eliminated
-    known_monomials = set(basis + required + eliminated)
+    known_monomials = set(basis + dependent)
     for i, p_bi in enumerate(p_basis):
         for monomial in p_bi.monomials:
             if not monomial in known_monomials:
@@ -400,11 +408,11 @@ def solve_via_basis_selection(equations, expansion_monomials, lambda_poly, diagn
 
     # Check that lambda * b = action_b * b + action_r * r at solution
     for bi, b_row, r_row in zip(basis, c_action_b, c_action_r):
-        assert len(r_row) == len(required + eliminated)
+        assert len(r_row) == len(dependent)
         assert len(b_row) == len(basis)
         lhs = bi*lambda_poly
-        rhs = (sum(ci*as_polynomial(ri, nvars, float) for ci, ri in zip(r_row, required+eliminated)) +
-               sum(ci*as_polynomial(bi, nvars, float) for ci, bi in zip(b_row, basis)))
+        rhs = (sum(cj*rj for cj, rj in zip(r_row, x_dependent)) +
+               sum(cj*bj for cj, bj in zip(b_row, x_basis)))
         if diagnostic_solutions is not None:
             for solution in diagnostic_solutions:
                 lvalue = lhs(*solution)
@@ -423,7 +431,7 @@ def solve_via_basis_selection(equations, expansion_monomials, lambda_poly, diagn
     if verbosity >= 2:
         print 'Solution for required monomials:'
         print soln
-        for row, monomial in zip(soln, required+eliminated):
+        for row, monomial in zip(soln, dependent):
             print '  %s = - %s * basis {at points on variety}' % (as_monomial(monomial), row)
 
     # Check that basis + soln * required = 0 at diagnostic solutions
@@ -438,29 +446,26 @@ def solve_via_basis_selection(equations, expansion_monomials, lambda_poly, diagn
                 raise DiagnosticError('expected equation %d to evaluate to zero but received %f' % (idx, values[idx]))
 
     # Check that lambda * b = action * b at solution (note that lambda is a polynomial, not a matrix here)
-    if verbosity >= 2:
-        print 'Basis * lambda:'
-    assert len(basis) == len(c_action)
-    for bi, row in zip(basis, c_action):
-        assert len(basis) == len(row)
-        lhs = bi*lambda_poly
-        rhs = sum(cj * as_polynomial(bj, nvars, float) for cj, bj in zip(row, basis))
+    if verbosity >= 2 or diagnostic_solutions is not None:
         if verbosity >= 2:
-            print '  %s * (%s) = %s = %s' % (as_term(bi, nvars), lambda_poly, lhs, rhs)
-        if diagnostic_solutions is not None:
-            for solution in diagnostic_solutions:
-                lvalue = lhs(*solution)
-                rvalue = rhs(*solution)
-                if verbosity >= 2:
-                    print '    at %s, lhs=%s, rhs=%s' % (solution, lvalue, rvalue)
-                if abs(lvalue - rvalue) > 1e-8:
-                    raise DiagnosticError('expected action equation lhs (=%f) to match rhs (=%f) at %s:\n'
-                                          '  lhs=%s\n  rhs=%s' %
-                                          (lvalue, rvalue, solution, lhs, rhs))
-
-    if verbosity >= 2:
-        print 'Action matrix:'
-        print c_action
+            print 'Action matrix:'
+            print c_action
+        for bi, row in zip(basis, c_action):
+            assert len(basis) == len(row)
+            lhs = bi*lambda_poly
+            rhs = sum(cj * bj for cj, bj in zip(row, x_basis))
+            if verbosity >= 2:
+                print '  %s * (%s) = %s = %s' % (as_term(bi, nvars), lambda_poly, lhs, rhs)
+            if diagnostic_solutions is not None:
+                for solution in diagnostic_solutions:
+                    lvalue = lhs(*solution)
+                    rvalue = rhs(*solution)
+                    if verbosity >= 2:
+                        print '    at %s, lhs=%s, rhs=%s' % (solution, lvalue, rvalue)
+                    if abs(lvalue - rvalue) > 1e-8:
+                        raise DiagnosticError('expected action equation lhs (=%f) to match rhs (=%f) at %s:\n'
+                                              '  lhs=%s\n  rhs=%s' %
+                                              (lvalue, rvalue, solution, lhs, rhs))
 
     # Find indices within basis
     unit_index = basis.index(Polynomial.constant(1, nvars))
