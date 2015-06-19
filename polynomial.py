@@ -324,11 +324,8 @@ class Monomial(object):
         else:
             return '*'.join(strings)
 
-    def __unicode__(self):
-        return self.format()
-
     def __str__(self):
-        return str(self).encode('utf-8')
+        return self.format()
 
     def __repr__(self):
         return str(self)
@@ -488,11 +485,8 @@ class Term(object):
         else:
             return prefix + '*'.join(strings)
 
-    def __unicode__(self):
-        return self.format()
-
     def __str__(self):
-        return str(self).encode('utf-8')
+        return self.format()
 
     def __repr__(self):
         return str(self)
@@ -507,8 +501,10 @@ class ComparableTerm(object):
     def __init__(self, ordering, term):
         self._ordering = ordering
         self._term = term
-    def __cmp__(self, rhs):
-        return self._ordering(self._term.monomial, rhs._term.monomial)
+    def __lt__(self, rhs):
+        return self._ordering(self._term.monomial, rhs._term.monomial) == -1
+    def __gt__(self, rhs):
+        return self._ordering(self._term.monomial, rhs._term.monomial) == 1
 
 
 class CoefficientView(object):
@@ -1039,11 +1035,8 @@ class Polynomial(object):
                 parts.append(term.format(use_superscripts))
             return ''.join(parts)
 
-    def __unicode__(self):
-        return self.format()
-
     def __str__(self):
-        return str(self).encode('utf8')
+        return self.format()
 
     def __repr__(self):
         return str(self)
