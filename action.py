@@ -30,7 +30,7 @@ def monomials_not_divisible_by(monomials):
 
     # Find monomials not divisble by the basis
     output = []
-    for candidate in itertools.product(*map(range, rect)):
+    for candidate in itertools.product(*list(map(range, rect))):
         if not any(can_divide_monomial(candidate, m) for m in monomials):
             output.append(candidate)
     return output

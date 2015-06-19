@@ -1,4 +1,4 @@
-import StringIO
+import io
 from fractions import Fraction
 import numpy as np
 
@@ -35,12 +35,12 @@ def array_str(arr):
             if isinstance(elem, Polynomial):
                 s = elem.format(compact=True)
             else:
-                s = unicode(elem)
+                s = str(elem)
             rowstrings.append(s)
             maxlen = max(maxlen, len(s))
         strings.append(rowstrings)
 
-    ss = StringIO.StringIO()
+    ss = io.StringIO()
     ss.write('[')
     for i, rowstrings in enumerate(strings):
         if i > 0:
@@ -120,6 +120,6 @@ def list_depth(x):
             if len(x) == 0:
                 return 1
             else:
-                return max(map(list_depth, x)) + 1
+                return max(list(map(list_depth, x))) + 1
         except TypeError:
             return 0

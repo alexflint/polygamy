@@ -19,9 +19,9 @@ class UnivariateTest(unittest.TestCase):
         import timeit
         f = parse('(x-1)*(x-2)*(x-3)*(x-4)+x*x**2*x**3*x**4*x**5')
         ff = f.compile()
-        print 'Time to evaluate uncompiled: ',timeit.timeit(lambda:f(10), number=10000)/10000
-        print 'Time to evaluate compiled: ',timeit.timeit(lambda:ff(10), number=10000)/10000
-        print 'Time to compile: ',timeit.timeit(lambda:f.compile(), number=10000)/10000
+        print('Time to evaluate uncompiled: ',timeit.timeit(lambda:f(10), number=10000)/10000)
+        print('Time to evaluate compiled: ',timeit.timeit(lambda:ff(10), number=10000)/10000)
+        print('Time to compile: ',timeit.timeit(lambda:f.compile(), number=10000)/10000)
 
     def test_sturm(self):
         p = parse('(x-0.5)*(x-1.5)*(x-2.5)*(x-3.5)', ctype=float)

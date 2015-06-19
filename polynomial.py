@@ -1,4 +1,4 @@
-from __future__ import division
+
 
 import abc
 import numbers
@@ -10,6 +10,8 @@ import numpy as np
 
 import unicode_rendering
 import compilation
+import collections
+from functools import reduce
 
 
 class OrderingError(Exception):
@@ -154,9 +156,8 @@ def as_polynomial(x, num_vars=None, ctype=None):
         raise CoerceError('cannot convert %s to polynomial' % type(x))
 
 
-class MonomialOrdering(object):
+class MonomialOrdering(object, metaclass=abc.ABCMeta):
     """Represents an ordering over n-tuples of integers."""
-    __metaclass__ = abc.ABCMeta
     @abc.abstractmethod
     def __call__(self, a, b):
         "__Call__ two tuples and return -1, 0, or 1"
@@ -327,7 +328,7 @@ class Monomial(object):
         return self.format()
 
     def __str__(self):
-        return unicode(self).encode('utf-8')
+        return str(self).encode('utf-8')
 
     def __repr__(self):
         return str(self)
@@ -491,7 +492,7 @@ class Term(object):
         return self.format()
 
     def __str__(self):
-        return unicode(self).encode('utf-8')
+        return str(self).encode('utf-8')
 
     def __repr__(self):
         return str(self)
@@ -521,7 +522,7 @@ class CoefficientView(object):
         return len(self._term_dict)
 
     def __iter__(self):
-        for term in self._term_dict.viewvalues():
+        for term in self._term_dict.values():
             yield term.coef
 
     def __getitem__(self, monomial):
@@ -624,7 +625,7 @@ class Polynomial(object):
 
     @property
     def monomials(self):
-        return self._term_dict.viewkeys()
+        return self._term_dict.keys()
 
     @property
     def coefficients(self):
@@ -678,7 +679,7 @@ class Polynomial(object):
         if rhs == 0:
             raise DivisionError('cannot divide by zero')
         if self.ctype == int or rhs.ctype == int:
-            print 'Warning: polynomial division with integer coefs will lead to unexpected round-off'
+            print('Warning: polynomial division with integer coefs will lead to unexpected round-off')
 
         self._assert_compatible(rhs)
 
@@ -763,7 +764,7 @@ class Polynomial(object):
                 raise OrderingError('you must provide a monomial ordering because this '+
                                     'polynomial is over more than one variable')
         else:
-            if callable(ordering):
+            if isinstance(ordering, collections.Callable):
                 return ordering
             else:
                 raise OrderingError('monomial orderings must be callable')
@@ -934,7 +935,7 @@ class Polynomial(object):
         assert len(x) == self.num_vars
         return sum(term(*x) for term in self)
 
-    def __nonzero__(self):
+    def __bool__(self):
         return len(self) > 0
 
     def __len__(self):
@@ -945,7 +946,7 @@ class Polynomial(object):
         """Return an iterator over the terms in this polynomial, in an
         arbitrary order. For predictable ordering, use
         polynomial.sorted_terms(...)."""
-        return self._term_dict.itervalues()
+        return iter(self._term_dict.values())
 
     def __contains__(self, monomial):
         """Return true if this polynomial contains a non-zero term
@@ -988,14 +989,14 @@ class Polynomial(object):
         """If this polynomial consists of just one term then return it, otherwise raise TypeError."""
         if len(self) != 1:
             raise TypeError("cannot convert a polynomial with %d terms to a single term" % len(self))
-        return self._term_dict.values()[0]
+        return list(self._term_dict.values())[0]
 
     def as_monomial(self):
         """If this polynomial consists of just one term and that term has a coefficient of 1 then return its monomial,
         otherwise raise TypeError."""
         if len(self) != 1:
             raise TypeError("cannot convert a polynomial with %d terms to a single monomial" % len(self))
-        term = self._term_dict.values()[0]
+        term = list(self._term_dict.values())[0]
         if term.coef != 1:
             raise TypeError("cannot convert a term with coef %s to a monomial" % term.coef)
         return term.monomial
@@ -1042,7 +1043,7 @@ class Polynomial(object):
         return self.format()
 
     def __str__(self):
-        return unicode(self).encode('utf8')
+        return str(self).encode('utf8')
 
     def __repr__(self):
         return str(self)

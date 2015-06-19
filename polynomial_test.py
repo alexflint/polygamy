@@ -1,4 +1,4 @@
-from __future__ import division
+
 
 import unittest
 import numpy as np
@@ -9,7 +9,7 @@ from modulo import ModuloInteger
 
 
 def first(xs):
-    return iter(xs).next()
+    return next(iter(xs))
 
 
 class TermTest(unittest.TestCase):
@@ -53,8 +53,8 @@ class PolynomialTest(unittest.TestCase):
     def test_astype(self):
         f = Polynomial.create([Term(7.1, (1,2,3), float)])
         self.assertEqual(f.ctype, float)
-        g = f.astype(long)
-        self.assertEqual(first(g).ctype, long)
+        g = f.astype(int)
+        self.assertEqual(first(g).ctype, int)
         self.assertEqual(first(f).ctype, float)
 
     def test_astype_modulo(self):

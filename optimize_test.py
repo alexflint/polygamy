@@ -31,22 +31,22 @@ class OptimizationTestCase(unittest.TestCase):
         X = true_solution[0] + dX
         Y = true_solution[1] + dY * 1j
         Z = np.abs(cost(X, Y))
-        print np.min(Z), np.max(Z)
+        print(np.min(Z), np.max(Z))
         plt.contourf(dX, dY, Z, levels=np.logspace(np.log10(np.min(Z)), np.log10(np.max(Z)), 16))
         plt.plot(0, 0, 'mx')
         plt.show()
         return
 
         gradients = cost.partial_derivatives()
-        print 'Cost:', cost
-        print 'Residuals:'
+        print('Cost:', cost)
+        print('Residuals:')
         for f in fs:
-            print f(x, y) - f(*true_solution)
-        print 'Gradients:'
+            print(f(x, y) - f(*true_solution))
+        print('Gradients:')
         for gradient in gradients:
-            print '  ', gradient(*true_solution)
-        print 'Jacobian:'
-        print polynomial_jacobian(fs)(*true_solution)
+            print('  ', gradient(*true_solution))
+        print('Jacobian:')
+        print(polynomial_jacobian(fs)(*true_solution))
         expansions = 3  # solvers.all_monomials(sym_vars, 2) + [sym_vars[2]**3, sym_vars[0]**2*sym_vars[2]]
         minima = optimize.minimize_globally(cost, expansions=expansions, verbosity=2, constraints=fs[:2],
                                             #diagnostic_solutions=[true_vars]
@@ -72,18 +72,18 @@ class OptimizationTestCase(unittest.TestCase):
         lagrangian = make_langrangian(-cost, constraints)
         gradients = lagrangian.partial_derivatives()
 
-        print 'Cost:', cost
-        print 'Lagrangian:', lagrangian
-        print 'Constraints:'
+        print('Cost:', cost)
+        print('Lagrangian:', lagrangian)
+        print('Constraints:')
         for constraint in constraints:
-            print '  ', constraint
-        print 'Gradients:'
+            print('  ', constraint)
+        print('Gradients:')
         for gradient in gradients:
-            print '  ', gradient
+            print('  ', gradient)
 
-        print 'At ground truth:'
-        print '  Cost = ', cost(*true_vars)
-        print '  Constraints = ', utils.evaluate_array(constraints, *true_vars)
+        print('At ground truth:')
+        print('  Cost = ', cost(*true_vars))
+        print('  Constraints = ', utils.evaluate_array(constraints, *true_vars))
         #print '  Gradients = ', [p(*true_vars) for p in gradients]
 
         expansions = 3  # solvers.all_monomials(sym_vars, 2) + [sym_vars[2]**3, sym_vars[0]**2*sym_vars[2]]
@@ -91,9 +91,9 @@ class OptimizationTestCase(unittest.TestCase):
                                             diagnostic_solutions=[], include_grobner=False)
 
         error = np.linalg.norm(minima - true_position)
-        print minima
-        print true_position
-        print 'Error:', error
+        print(minima)
+        print(true_position)
+        print('Error:', error)
 
     def test_estimate_orientation_9params(self):
         np.random.seed(0)
@@ -114,15 +114,15 @@ class OptimizationTestCase(unittest.TestCase):
         cost = sum(r**2 for r in residuals)
         gradients = cost.partial_derivatives()
 
-        print 'Cost:', cost
-        print 'Constraints:'
+        print('Cost:', cost)
+        print('Constraints:')
         for constraint in constraints:
-            print '  ', constraint
+            print('  ', constraint)
 
-        print 'At ground truth:'
-        print '  Cost = ', cost(*true_vars)
-        print '  Constraints = ', utils.evaluate_array(constraints, *true_vars)
-        print '  Gradients = ', [p(*true_vars) for p in gradients]
+        print('At ground truth:')
+        print('  Cost = ', cost(*true_vars))
+        print('  Constraints = ', utils.evaluate_array(constraints, *true_vars))
+        print('  Gradients = ', [p(*true_vars) for p in gradients])
         expansions = [solvers.all_monomials(sym_vars, 2) for _ in range(cost.num_vars)]
         minima = optimize.minimize_globally(cost,
                                             constraints,
@@ -133,9 +133,9 @@ class OptimizationTestCase(unittest.TestCase):
         estimated_r = np.reshape(minima, (3, 3))
         error = np.linalg.norm(estimated_r - true_r)
 
-        print 'Minima:\n', estimated_r
-        print 'Ground truth:\n', true_r
-        print 'Error:', error
+        print('Minima:\n', estimated_r)
+        print('Ground truth:\n', true_r)
+        print('Error:', error)
 
     def test_estimate_pose_and_depths(self):
         np.random.seed(0)
@@ -169,15 +169,15 @@ class OptimizationTestCase(unittest.TestCase):
         cost = sum(r**2 for r in residuals)
         gradients = cost.partial_derivatives()
 
-        print 'Cost:', cost
-        print 'Constraints:'
+        print('Cost:', cost)
+        print('Constraints:')
         for constraint in constraints:
-            print '  ', constraint
+            print('  ', constraint)
 
-        print 'At ground truth:'
-        print '  Cost = ', cost(*true_vars)
-        print '  Constraints = ', utils.evaluate_array(constraints, *true_vars)
-        print '  Gradients = ', [p(*true_vars) for p in gradients]
+        print('At ground truth:')
+        print('  Cost = ', cost(*true_vars))
+        print('  Constraints = ', utils.evaluate_array(constraints, *true_vars))
+        print('  Gradients = ', [p(*true_vars) for p in gradients])
         expansions = solvers.all_monomials(sym_vars, 2)
         minima = optimize.minimize_globally(cost,
                                             constraints,
@@ -188,9 +188,9 @@ class OptimizationTestCase(unittest.TestCase):
         estimated_r = np.reshape(minima, (3, 3))
         error = np.linalg.norm(estimated_r - true_orientation)
 
-        print 'Minima:\n', estimated_r
-        print 'Ground truth:\n', true_orientation
-        print 'Error:', error
+        print('Minima:\n', estimated_r)
+        print('Ground truth:\n', true_orientation)
+        print('Error:', error)
 
     def test_orientation_reprojection(self):
         true_s = np.array([.1, .2, -.3])
@@ -213,12 +213,12 @@ class OptimizationTestCase(unittest.TestCase):
         gradients = cost.partial_derivatives()
         constraint = sym_k * (1 + np.dot(sym_s, sym_s)) - 1
 
-        print 'Cost:', cost
-        print 'Constraint:', constraint
-        print 'At ground truth:'
-        print '  Cost = ', cost(*true_vars)
-        print '  Constraint = ', constraint(*true_vars)
-        print '  Gradients = ', [p(*true_vars) for p in gradients]
+        print('Cost:', cost)
+        print('Constraint:', constraint)
+        print('At ground truth:')
+        print('  Cost = ', cost(*true_vars))
+        print('  Constraint = ', constraint(*true_vars))
+        print('  Gradients = ', [p(*true_vars) for p in gradients])
         expansions = [solvers.all_monomials(sym_vars, 2) for _ in range(cost.num_vars)]
         for a in expansions:
             a.extend([z*z*w, x*x*w, y*y*w, z*z*w*w, z*w*w])
@@ -226,5 +226,5 @@ class OptimizationTestCase(unittest.TestCase):
                                             [constraint],
                                             expansions=expansions,
                                             diagnostic_solutions=[true_vars])
-        print 'Minima: ', minima
+        print('Minima: ', minima)
 

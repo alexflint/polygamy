@@ -1,4 +1,4 @@
-from __future__ import division
+
 
 import exceptions
 import numbers
@@ -36,7 +36,7 @@ class IntegerRingType(ModuloIntegerType):
     def __unicode__(cls):
         return 'ModuloInteger[%d]' % cls._n
     def __str__(cls):
-        return unicode(cls).encode('utf-8')
+        return str(cls).encode('utf-8')
     def __repr__(cls):
         return str(cls)
     def __eq__(cls, rhs):
@@ -63,9 +63,8 @@ def make_modulo_type(n):
     return IntegerRingType(name, bases, dict)
 
 
-class ModuloInteger(object):
+class ModuloInteger(object, metaclass=ModuloIntegerType):
     """Represents an element of the ring of integers modulo n."""
-    __metaclass__ = ModuloIntegerType
 
     _n = None  # For compatibility with specific integer rings
 
@@ -124,13 +123,13 @@ class ModuloInteger(object):
     def __int__(self):
         return int(self._r)
     def __long__(self):
-        return long(self._r)
+        return int(self._r)
     def __float__(self):
         return float(self._r)
 
     def __cmp__(self, rhs):
         return cmp(self._r, int(rhs))
-    def __nonzero__(self):
+    def __bool__(self):
         return self._r != 0
 
     def __str__(self):

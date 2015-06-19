@@ -14,7 +14,7 @@ def find_critical_points(polynomial, constraints=None, expansions=2, lambda_poly
     """Find all local minima, local maxima, and saddle points of the given polynomial by solving the first order
     conditions."""
     system = polynomial.astype(float).partial_derivatives()
-    system = filter(lambda p: p.total_degree > 0, system)
+    system = [p for p in system if p.total_degree > 0]
     if constraints is not None:
         system.extend(constraints)
     coords = Polynomial.coordinates(polynomial.num_vars, ctype=float)

@@ -15,5 +15,5 @@ def function_from_expression(expr, varnames=None):
     source = 'def f(%s): return %s' % (','.join(varnames), expr)
     code = compile(source, '<polynomial>', mode='exec')
     namespace = {}
-    exec code in namespace
+    exec(code, namespace)
     return namespace['f']
