@@ -1,5 +1,3 @@
-
-
 import abc
 import numbers
 import fractions
