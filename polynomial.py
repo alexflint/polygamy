@@ -4,13 +4,12 @@ import fractions
 import itertools
 import ast
 import operator
-import numpy as np
-
-import unicode_rendering
-import compilation
 import collections
 from functools import reduce
+import numpy as np
 
+from . import unicode_rendering
+from . import compilation
 
 class OrderingError(Exception):
     pass

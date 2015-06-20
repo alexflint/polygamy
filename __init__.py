@@ -1,4 +1,4 @@
-from polynomial import \
+from .polynomial import \
 	Polynomial, \
 	Term, \
 	Monomial, \
